@@ -1,0 +1,24 @@
+# === Données du club : ne jamais versionner ===
+*.xlsx
+*.xlsm
+*.xls
+*.csv
+*.ods
+*.pdf
+*.docx
+*.png
+*.jpg
+*.jpeg
+sauvegardes/
+exports/
+data/
+
+# === Identifiants clasp / Google ===
+.clasprc.json
+credentials.json
+token.json
+
+# === Système ===
+.DS_Store
+Thumbs.db
+desktop.ini

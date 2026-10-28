@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<base target="_top">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gestion du club</title>
+<style>
+  :root {
+    --rouge: #c8102e; --rouge-clair: #fbe9ec; --noir: #1a1a1a; --gris: #6b6b6b;
+    --fond: #f4f2ef; --carte: #ffffff; --bord: #e2ded8; --vert: #2e7d32; --vert-clair: #e8f5e9;
+    --orange: #b26a00; --orange-clair: #fff4e0;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; background: var(--fond); color: var(--noir); font-size: 15px; }
+  header { background: var(--noir); color: #fff; display: flex; align-items: center; gap: 14px; padding: 12px 18px; position: sticky; top: 0; z-index: 10; }
+  header img { width: 48px; height: 48px; border-radius: 50%; background: #fff; object-fit: contain; }
+  header h1 { font-size: 1.15em; margin: 0; letter-spacing: .5px; }
+  header p { margin: 2px 0 0; font-size: .82em; color: #cfcfcf; }
+  header .pastille { margin-left: auto; background: var(--rouge); padding: 4px 10px; border-radius: 14px; font-size: .8em; white-space: nowrap; }
+  nav { display: flex; background: #fff; border-bottom: 1px solid var(--bord); overflow-x: auto; }
+  nav button { flex: 1; min-width: 110px; border: 0; background: none; padding: 13px 8px; font-size: .92em; font-weight: 600; color: var(--gris); border-bottom: 3px solid transparent; cursor: pointer; }
+  nav button.actif { color: var(--rouge); border-bottom-color: var(--rouge); }
+  main { max-width: 1100px; margin: 0 auto; padding: 18px 16px 60px; }
+  section { display: none; }
+  section.actif { display: block; }
+  h2 { font-size: 1.2em; margin: 4px 0 14px; }
+  h3 { font-size: 1em; margin: 0 0 12px; }
+  .cartes { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 18px; }
+  .kpi { background: var(--carte); border: 1px solid var(--bord); border-radius: 12px; padding: 14px; border-left: 5px solid var(--noir); }
+  .kpi .v { font-size: 1.5em; font-weight: 700; margin: 4px 0 2px; }
+  .kpi .l { font-size: .82em; color: var(--gris); }
+  .kpi.rouge { border-left-color: var(--rouge); } .kpi.vert { border-left-color: var(--vert); } .kpi.orange { border-left-color: var(--orange); }
+  .bloc { background: var(--carte); border: 1px solid var(--bord); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  .barre { height: 14px; border-radius: 7px; background: #eee; overflow: hidden; display: flex; margin: 8px 0 4px; }
+  .barre span { display: block; height: 100%; }
+  .legende { font-size: .82em; color: var(--gris); display: flex; gap: 14px; flex-wrap: wrap; }
+  .grille { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+  label { display: block; font-size: .82em; font-weight: 600; margin-bottom: 4px; color: #333; }
+  input, select, textarea { width: 100%; padding: 10px; border: 1.5px solid var(--bord); border-radius: 8px; font-size: 15px; font-family: inherit; background: #fff; }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--rouge); }
+  textarea { resize: vertical; }
+  .champ-plein { grid-column: 1 / -1; }
+  .coches { display: flex; gap: 18px; flex-wrap: wrap; margin: 12px 0; font-size: .9em; }
+  .coches label { display: flex; align-items: center; gap: 6px; font-weight: 500; margin: 0; }
+  .coches input { width: auto; }
+  button.btn { background: var(--rouge); color: #fff; border: 0; border-radius: 8px; padding: 10px 18px; font-size: .95em; font-weight: 600; cursor: pointer; margin: 4px 6px 4px 0; }
+  button.btn:disabled { opacity: .5; cursor: wait; }
+  button.sec { background: #fff; color: var(--noir); border: 1.5px solid var(--bord); }
+  button.mini { padding: 5px 10px; font-size: .8em; margin: 2px; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: .9em; }
+  th { text-align: left; background: var(--noir); color: #fff; padding: 9px 8px; font-weight: 600; white-space: nowrap; }
+  td { padding: 8px; border-bottom: 1px solid var(--bord); vertical-align: middle; }
+  td.num, th.num { text-align: right; white-space: nowrap; }
+  .pos { color: var(--vert); font-weight: 600; } .neg { color: var(--rouge); font-weight: 600; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: .78em; font-weight: 600; white-space: nowrap; }
+  .tag.ok { background: var(--vert-clair); color: var(--vert); }
+  .tag.part { background: var(--orange-clair); color: var(--orange); }
+  .tag.att { background: var(--rouge-clair); color: var(--rouge); }
+  .note { font-size: .85em; color: var(--gris); margin: 6px 0 0; }
+  #toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); max-width: 92%; background: var(--noir); color: #fff; padding: 12px 16px; border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,.25); display: none; z-index: 50; white-space: pre-line; font-size: .92em; }
+  #toast.err { background: var(--rouge); }
+  #toast a { color: #ffd54f; font-weight: 700; margin-left: 6px; }
+  #panneauPaiement { display: none; border: 2px solid var(--rouge); }
+  .recherche { max-width: 320px; margin-bottom: 10px; }
+  .bandeau { padding: 10px 12px; border-radius: 8px; margin-bottom: 12px; font-size: .9em; display: none; }
+  .bandeau.reinscr { background: var(--orange-clair); color: var(--orange); display: block; }
+  .bandeau.nouveau { background: var(--vert-clair); color: var(--vert); display: block; }
+  .fichier { border: 2px dashed var(--bord); border-radius: 10px; padding: 18px; text-align: center; background: #fafafa; }
+  .fichier input { border: 0; background: none; }
+  .progres { height: 8px; background: #eee; border-radius: 4px; overflow: hidden; min-width: 80px; }
+  .progres span { display: block; height: 100%; }
+  .resume { display: flex; gap: 16px; flex-wrap: wrap; font-size: .9em; margin: 4px 0 10px; color: var(--gris); }
+  .resume b { color: var(--noir); }
+  td input, td select { padding: 6px; font-size: .9em; }
+  .rap { cursor: pointer; font-size: 1.1em; border: 0; background: none; }
+  @media (max-width: 600px) { header .pastille { display: none; } .kpi .v { font-size: 1.25em; } }
+</style>
+</head>
+<body>
+<header>
+  <img id="logo" alt="" hidden>
+  <div><h1 id="nomClub">Gestion du club</h1><p id="villeClub"></p></div>
+  <div class="pastille" id="exercice">…</div>
+</header>
+
+<nav>
+  <button class="actif" data-onglet="accueil">📊 Tableau de bord</button>
+  <button data-onglet="compta">💰 Saisie</button>
+  <button data-onglet="historique">📜 Historique</button>
+  <button data-onglet="banque">🏦 Banque</button>
+  <button data-onglet="budget">📒 Budget</button>
+  <button data-onglet="adherents">👥 Adhérents</button>
+  <button data-onglet="dons">🎁 Dons</button>
+  <button data-onglet="rapports">📋 Rapports</button>
+</nav>
+
+<main>
+  <!-- ================= TABLEAU DE BORD ================= -->
+  <section id="accueil" class="actif">
+    <div class="cartes">
+      <div class="kpi"><div class="l">🏦 Solde banque</div><div class="v" id="kBanque">…</div></div>
+      <div class="kpi"><div class="l">💶 Caisse (espèces)</div><div class="v" id="kCaisse">…</div></div>
+      <div class="kpi vert"><div class="l">📈 Résultat de l'exercice</div><div class="v" id="kResultat">…</div></div>
+      <div class="kpi orange"><div class="l">⏳ Reste à encaisser</div><div class="v" id="kReste">…</div></div>
+    </div>
+    <div class="bloc">
+      <h3>Recettes et dépenses de l'exercice</h3>
+      <div class="barre"><span id="bR" style="background:var(--vert);width:50%"></span><span id="bD" style="background:var(--rouge);width:50%"></span></div>
+      <div class="legende"><span>🟩 Recettes <b id="lR"></b></span><span>🟥 Dépenses <b id="lD"></b></span></div>
+    </div>
+    <div class="bloc">
+      <h3>Adhérents</h3>
+      <div class="barre"><span id="bOk" style="background:var(--vert)"></span><span id="bPart" style="background:#f0a020"></span><span id="bAtt" style="background:var(--rouge)"></span></div>
+      <div class="legende"><span>🟩 À jour <b id="lOk"></b></span><span>🟧 Partiel <b id="lPart"></b></span><span>🟥 En attente <b id="lAtt"></b></span><span>Total <b id="lTot"></b></span></div>
+    </div>
+    <button class="btn sec" onclick="chargerStats()">🔄 Actualiser</button>
+    <button class="btn sec" onclick="ouvrirSheets()">📊 Ouvrir le Google Sheets</button>
+    <button class="btn sec" onclick="action('sauvegardeWeb', [], this)">💾 Sauvegarder maintenant</button>
+  </section>
+
+  <!-- ================= COMPTABILITÉ ================= -->
+  <section id="compta">
+    <h2>💰 Nouvelle opération</h2>
+    <div class="bloc">
+      <div class="grille">
+        <div><label>Date</label><input type="date" id="opDate"></div>
+        <div><label>Type</label><select id="opType"><option value="Depense">Dépense</option><option value="Recette">Recette</option></select></div>
+        <div><label>Montant (€, positif)</label><input type="text" inputmode="decimal" id="opMontant" placeholder="25,60"></div>
+        <div><label>Source</label><select id="opSource"><option value="Banque">Banque</option><option value="Especes">Espèces</option></select></div>
+        <div class="champ-plein"><label>Libellé</label><input type="text" id="opLibelle"></div>
+        <div><label>Catégorie</label><input type="text" id="opCategorie" list="listeCategories" placeholder="Choisir ou saisir"></div>
+        <div><label>Tiers</label><input type="text" id="opTiers"></div>
+        <div class="champ-plein"><label>Notes</label><input type="text" id="opNotes"></div>
+        <div class="champ-plein"><label>Justificatif (facture, ticket – PDF ou photo, optionnel)</label>
+          <input type="file" id="opJustif" accept="application/pdf,image/*"></div>
+      </div>
+      <datalist id="listeCategories"></datalist>
+      <p class="note">Le signe est appliqué automatiquement : une dépense est enregistrée en négatif.</p>
+      <button class="btn" onclick="ajouterOperation(this)">💾 Enregistrer</button>
+    </div>
+    <h2>Dernières écritures</h2>
+    <div class="bloc table-wrap">
+      <table><thead><tr><th>Date</th><th>Libellé</th><th>Catégorie</th><th>Source</th><th class="num">Montant</th></tr></thead>
+        <tbody id="tOps"><tr><td colspan="5">Chargement…</td></tr></tbody></table>
+    </div>
+  </section>
+
+  <!-- ================= HISTORIQUE ================= -->
+  <section id="historique">
+    <h2>📜 Historique complet depuis 2023</h2>
+    <div class="bloc">
+      <div class="grille">
+        <div><label>Exercice</label><select id="hAnnee"></select></div>
+        <div><label>Catégorie</label><select id="hCategorie"><option value="">Toutes</option></select></div>
+        <div><label>Source</label><select id="hSource"><option value="">Toutes</option><option value="Banque">Banque</option><option value="Especes">Espèces</option></select></div>
+        <div><label>Rapprochement</label><select id="hRap"><option value="">Tous</option><option value="non">Non rapprochées</option><option value="oui">Rapprochées</option></select></div>
+        <div class="champ-plein"><label>Recherche (libellé, tiers, notes, n° de pièce)</label><input type="search" id="hTexte"></div>
+      </div>
+      <button class="btn" onclick="chercherHistorique(this)">🔍 Rechercher</button>
+      <button class="btn sec" onclick="exporterHistorique(this)">📤 Exporter en CSV</button>
+    </div>
+    <div class="resume" id="hResume"></div>
+    <div class="bloc table-wrap">
+      <table><thead><tr><th>Date</th><th>Libellé</th><th>Catégorie</th><th>Source</th><th class="num">Montant</th><th title="Rapproché avec le relevé">✓</th><th>Pièce</th></tr></thead>
+        <tbody id="tHisto"><tr><td colspan="7">Lancez une recherche</td></tr></tbody></table>
+    </div>
+    <input type="file" id="fichierLigne" accept="application/pdf,image/*" hidden>
+    <p class="note">✓ = l'écriture figure sur le relevé bancaire (cliquez pour cocher/décocher). 📎 = justificatif stocké dans « 04_Justificatifs ».</p>
+  </section>
+
+  <!-- ================= BANQUE ================= -->
+  <section id="banque">
+    <h2>🏦 Importer un relevé bancaire</h2>
+    <div class="bloc">
+      <div class="fichier">
+        <p style="margin-top:0"><b>Relevé CSV</b> : rapprochement automatique avec la comptabilité.<br><b>Relevé PDF</b> : archivé dans Drive (consultation).</p>
+        <input type="file" id="releve" accept=".csv,text/csv,application/pdf">
+      </div>
+      <p class="note">Dans votre banque en ligne, choisissez « Télécharger / exporter les opérations » au format CSV (ou Excel CSV).</p>
+      <button class="btn" onclick="analyserReleve(this)">🔎 Analyser le relevé</button>
+    </div>
+    <div class="bloc" id="blocApercu" style="display:none">
+      <div class="resume" id="rResume"></div>
+      <div class="table-wrap">
+        <table><thead><tr><th></th><th>Date</th><th>Libellé banque</th><th class="num">Montant</th><th>Résultat</th><th>Catégorie / correspondance</th></tr></thead>
+          <tbody id="tReleve"></tbody></table>
+      </div>
+      <button class="btn" onclick="importerReleve(this)" style="margin-top:12px">✅ Valider l'import</button>
+      <button class="btn sec" onclick="$('blocApercu').style.display='none'">Annuler</button>
+    </div>
+  </section>
+
+  <!-- ================= BUDGET ================= -->
+  <section id="budget">
+    <h2>📒 Budget prévisionnel</h2>
+    <div class="bloc">
+      <div class="grille">
+        <div><label>Exercice (année de début)</label><input type="number" id="bAnnee"></div>
+        <div style="align-self:end"><button class="btn sec" onclick="chargerBudget(this)">Charger</button></div>
+      </div>
+      <p class="note" id="bLibelle"></p>
+      <button class="btn sec" onclick="proposerBudget(this)">↻ Partir du réalisé de l'exercice précédent</button>
+      <button class="btn sec" onclick="ajouterLigneBudget()">➕ Ajouter une ligne</button>
+    </div>
+    <div class="cartes">
+      <div class="kpi vert"><div class="l">Recettes prévues / réalisées</div><div class="v" id="bR">…</div><div class="progres"><span id="bRp" style="background:var(--vert)"></span></div></div>
+      <div class="kpi rouge"><div class="l">Dépenses prévues / réalisées</div><div class="v" id="bD">…</div><div class="progres"><span id="bDp" style="background:var(--rouge)"></span></div></div>
+      <div class="kpi"><div class="l">Résultat prévu</div><div class="v" id="bRes">…</div></div>
+    </div>
+    <div class="bloc table-wrap">
+      <table><thead><tr><th>Type</th><th>Catégorie</th><th class="num">Prévu (€)</th><th class="num">Réalisé</th><th>Avancement</th><th></th></tr></thead>
+        <tbody id="tBudget"><tr><td colspan="6">Chargement…</td></tr></tbody></table>
+      <button class="btn" onclick="enregistrerBudget(this)" style="margin-top:12px">💾 Enregistrer le budget</button>
+    </div>
+  </section>
+
+  <!-- ================= ADHÉRENTS ================= -->
+  <section id="adherents">
+    <h2>👥 Inscription / réinscription</h2>
+    <div class="bloc">
+      <div class="grille">
+        <div><label>N° de licence FFKaraté</label><input type="text" id="adLicence" placeholder="Saisir puis Rechercher"></div>
+        <div style="align-self:end"><button class="btn sec" onclick="chercherLicence(this)">🔍 Rechercher</button></div>
+      </div>
+      <div id="bandeauLicence" class="bandeau" style="margin-top:12px"></div>
+      <div class="grille">
+        <div><label>Nom et prénom</label><input type="text" id="adNom"></div>
+        <div><label>Email</label><input type="email" id="adEmail"></div>
+        <div><label>Téléphone</label><input type="tel" id="adTel"></div>
+        <div id="zoneFrais"><label>Frais d'adhésion (€)</label><input type="text" inputmode="decimal" id="adFrais"></div>
+        <div><label>Cotisation de la saison (€)</label><input type="text" inputmode="decimal" id="adCotisation"></div>
+        <div class="champ-plein"><label>Adresse</label><input type="text" id="adAdresse"></div>
+        <div class="champ-plein"><label>Notes</label><input type="text" id="adNotes"></div>
+      </div>
+      <button class="btn" id="btnAdherent" onclick="enregistrerAdherent(this)">💾 Enregistrer</button>
+    </div>
+
+    <div class="bloc" id="panneauPaiement">
+      <h3 id="titrePaiement">Paiement</h3>
+      <div class="grille">
+        <div><label>Objet</label><select id="pNature" onchange="majMontantPaiement()">
+          <option value="les_deux">Adhésion + cotisation</option>
+          <option value="cotisation">Cotisation</option>
+          <option value="adhesion">Adhésion seule</option></select></div>
+        <div><label>Montant reçu (€)</label><input type="text" inputmode="decimal" id="pMontant"></div>
+        <div><label>Mode</label><select id="pMode"></select></div>
+        <div><label>Date</label><input type="date" id="pDate"></div>
+      </div>
+      <div class="coches">
+        <label><input type="checkbox" id="pCompta" checked> Écriture en comptabilité</label>
+        <label><input type="checkbox" id="pRecu" checked> Générer le reçu PDF</label>
+      </div>
+      <button class="btn" onclick="validerPaiement(this)">✅ Valider le paiement</button>
+      <button class="btn sec" onclick="fermerPaiement()">Annuler</button>
+    </div>
+
+    <h2>Liste des adhérents</h2>
+    <input class="recherche" type="search" id="filtreAdh" placeholder="Filtrer (nom ou licence)…" oninput="afficherAdherents()">
+    <div class="bloc table-wrap">
+      <table><thead><tr><th>Licence</th><th>Nom</th><th>Saison</th><th>Adhésion</th><th class="num">Reste dû</th><th></th></tr></thead>
+        <tbody id="tAdh"><tr><td colspan="6">Chargement…</td></tr></tbody></table>
+    </div>
+  </section>
+
+  <!-- ================= DONS ================= -->
+  <section id="dons">
+    <h2>🎁 Nouveau don</h2>
+    <div class="bloc">
+      <div class="grille">
+        <div><label>Nom du donateur</label><input type="text" id="dNom"></div>
+        <div><label>Email</label><input type="email" id="dEmail"></div>
+        <div><label>Montant (€)</label><input type="text" inputmode="decimal" id="dMontant"></div>
+        <div><label>Date</label><input type="date" id="dDate"></div>
+        <div><label>Nature</label><select id="dNature"><option value="Numéraire">Numéraire (argent)</option><option value="Don en nature">Don en nature</option></select></div>
+        <div><label>Mode de versement</label><select id="dMode"></select></div>
+        <div class="champ-plein"><label>Adresse complète (obligatoire pour le reçu fiscal)</label><input type="text" id="dAdresse"></div>
+      </div>
+      <div class="coches">
+        <label><input type="checkbox" id="dCompta" checked> Écriture en comptabilité</label>
+        <label><input type="checkbox" id="dRecu" checked> Générer le reçu fiscal</label>
+      </div>
+      <button class="btn" onclick="ajouterDon(this)">💾 Enregistrer le don</button>
+    </div>
+    <h2>Dons enregistrés</h2>
+    <div class="bloc table-wrap">
+      <table><thead><tr><th>Date</th><th>Donateur</th><th>Nature</th><th class="num">Montant</th><th>Reçu</th><th></th></tr></thead>
+        <tbody id="tDons"><tr><td colspan="6">Chargement…</td></tr></tbody></table>
+    </div>
+  </section>
+
+  <!-- ================= RAPPORTS ================= -->
+  <section id="rapports">
+    <h2>📋 Rapports</h2>
+    <div class="bloc">
+      <div class="grille">
+        <div><label>Exercice (année de début)</label><input type="number" id="rAnnee"></div>
+      </div>
+      <p class="note" id="rLibelle"></p>
+      <button class="btn" onclick="action('genererBilanWeb', [val('rAnnee')], this)">📈 Bilan financier (PDF)</button>
+      <button class="btn" onclick="action('genererRapportAGOWeb', [val('rAnnee')], this)">🏆 Rapport AGO (Google Doc)</button>
+    </div>
+    <div class="bloc">
+      <h3>Comparer deux exercices</h3>
+      <div class="grille">
+        <div><label>Premier exercice</label><input type="number" id="rA1"></div>
+        <div><label>Second exercice</label><input type="number" id="rA2"></div>
+      </div>
+      <button class="btn" onclick="action('genererComparatifWeb', [val('rA1'), val('rA2')], this)">📉 Comparatif (PDF)</button>
+    </div>
+    <p class="note">Les documents sont enregistrés dans le dossier « 02_Factures_PDF » de Google Drive. Le rapport AGO est un Google Doc pour pouvoir compléter les parties entre crochets.</p>
+  </section>
+</main>
+
+<div id="toast"></div>
+
+<script>
+  var CTX = null, ADHERENTS = [], PAIEMENT = null;
+
+  // ---------- outils ----------
+  function $(id) { return document.getElementById(id); }
+  function val(id) { return $(id).value.trim(); }
+  function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+  function euros(n) { return (Number(n) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €'; }
+  function aujourdhui() { var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+
+  function appel(fn, args) {
+    return new Promise(function (ok, ko) {
+      var r = google.script.run.withSuccessHandler(ok).withFailureHandler(ko);
+      r[fn].apply(r, args || []);
+    });
+  }
+
+  var minuteur = null;
+  function toast(msg, erreur, url) {
+    var t = $('toast');
+    t.className = erreur ? 'err' : '';
+    t.innerHTML = esc(msg) + (url ? ' <a href="' + esc(url) + '" target="_blank" rel="noopener">Ouvrir le document</a>' : '');
+    t.style.display = 'block';
+    clearTimeout(minuteur);
+    minuteur = setTimeout(function () { t.style.display = 'none'; }, url ? 15000 : 6000);
+  }
+  function erreur(e) { toast((e && e.message ? e.message : String(e)).replace(/^Error: /, ''), true); }
+
+  function occuper(btn, actif) { if (btn) btn.disabled = actif; }
+
+  function action(fn, args, btn) {
+    occuper(btn, true);
+    appel(fn, args).then(function (r) { toast(r.message, false, r.url); })
+      .catch(erreur).finally(function () { occuper(btn, false); });
+  }
+
+  // ---------- navigation ----------
+  document.querySelectorAll('nav button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('nav button').forEach(function (x) { x.classList.remove('actif'); });
+      document.querySelectorAll('section').forEach(function (x) { x.classList.remove('actif'); });
+      b.classList.add('actif');
+      $(b.dataset.onglet).classList.add('actif');
+      if (b.dataset.onglet === 'compta') chargerOperations();
+      if (b.dataset.onglet === 'adherents') chargerAdherents();
+      if (b.dataset.onglet === 'dons') chargerDons();
+      if (b.dataset.onglet === 'accueil') chargerStats();
+      if (b.dataset.onglet === 'historique') chercherHistorique();
+      if (b.dataset.onglet === 'budget') chargerBudget();
+    });
+  });
+
+  // ---------- démarrage ----------
+  window.addEventListener('load', function () {
+    ['opDate', 'pDate', 'dDate'].forEach(function (id) { $(id).value = aujourdhui(); });
+    appel('getContexteWeb').then(function (c) {
+      CTX = c;
+      $('nomClub').textContent = c.club;
+      $('villeClub').textContent = c.ville;
+      $('exercice').textContent = c.exercice;
+      document.title = c.club;
+      if (c.logo) { $('logo').src = c.logo; $('logo').hidden = false; }
+      $('listeCategories').innerHTML = c.categories.map(function (x) { return '<option value="' + esc(x) + '">'; }).join('');
+      var modes = c.modes.map(function (m) { return '<option>' + esc(m) + '</option>'; }).join('');
+      $('pMode').innerHTML = modes; $('dMode').innerHTML = modes;
+      $('rAnnee').value = c.anneeCourante; $('rA1').value = c.anneeCourante - 1; $('rA2').value = c.anneeCourante;
+      $('rLibelle').textContent = 'Exercice en cours : ' + c.exercice;
+      $('adFrais').value = c.tarifAdhesion; $('adCotisation').value = c.tarifCotisation;
+      var annees = '<option value="tout">Tous les exercices</option>';
+      for (var a = c.anneeCourante; a >= 2022; a--) annees += '<option value="' + a + '">' + a + '</option>';
+      $('hAnnee').innerHTML = annees; $('hAnnee').value = String(c.anneeCourante);
+      $('hCategorie').innerHTML = '<option value="">Toutes</option>' + c.categories.map(function (x) { return '<option>' + esc(x) + '</option>'; }).join('');
+      $('bAnnee').value = c.anneeCourante;
+    }).catch(erreur);
+    chargerStats();
+  });
+
+  // ---------- tableau de bord ----------
+  function chargerStats() {
+    appel('obtenirStatistiquesCompletes').then(function (s) {
+      $('kBanque').textContent = euros(s.soldeBanque);
+      $('kCaisse').textContent = euros(s.soldeCaisse);
+      $('kResultat').textContent = euros(s.resultat);
+      $('kResultat').className = 'v ' + (s.resultat >= 0 ? 'pos' : 'neg');
+      $('kReste').textContent = euros(s.resteAEncaisser);
+      var tot = s.recettes + s.depenses || 1;
+      $('bR').style.width = (s.recettes / tot * 100) + '%';
+      $('bD').style.width = (s.depenses / tot * 100) + '%';
+      $('lR').textContent = euros(s.recettes); $('lD').textContent = euros(s.depenses);
+      var n = s.totalAdherents || 1;
+      $('bOk').style.width = (s.adherentsAJour / n * 100) + '%';
+      $('bPart').style.width = (s.adherentsPartiels / n * 100) + '%';
+      $('bAtt').style.width = (s.adherentsAttente / n * 100) + '%';
+      $('lOk').textContent = s.adherentsAJour; $('lPart').textContent = s.adherentsPartiels;
+      $('lAtt').textContent = s.adherentsAttente; $('lTot').textContent = s.totalAdherents;
+    }).catch(erreur);
+  }
+
+  function ouvrirSheets() {
+    appel('obtenirUrlGoogleSheets').then(function (u) { window.open(u, '_blank'); }).catch(erreur);
+  }
+
+  // ---------- comptabilité ----------
+  function ajouterOperation(btn) {
+    var d = { date: val('opDate'), type: val('opType'), montant: val('opMontant'), source: val('opSource'),
+              libelle: val('opLibelle'), categorie: val('opCategorie'), tiers: val('opTiers'), notes: val('opNotes') };
+    if (!d.libelle || !d.montant) return toast('Libellé et montant obligatoires', true);
+    var fichier = $('opJustif').files[0];
+    occuper(btn, true);
+    appel('ajouterOperationWeb', [d]).then(function (r) {
+      if (!fichier) return r;
+      return lireFichier(fichier).then(function (f) {
+        f.ligne = r.ligne;
+        return appel('televerserJustificatifWeb', [f]);
+      }).then(function (j) { return { message: r.message + '\n' + j.message, url: j.url }; });
+    }).then(function (r) {
+      toast(r.message, false, r.url);
+      ['opMontant', 'opLibelle', 'opTiers', 'opNotes', 'opJustif'].forEach(function (id) { $(id).value = ''; });
+      chargerOperations();
+    }).catch(erreur).finally(function () { occuper(btn, false); });
+  }
+
+  function chargerOperations() {
+    appel('dernieresOperationsWeb', [15]).then(function (ops) {
+      $('tOps').innerHTML = ops.length ? ops.map(function (o) {
+        return '<tr><td>' + esc(o.date) + '</td><td>' + esc(o.libelle) + '</td><td>' + esc(o.categorie) + '</td><td>' +
+               esc(o.source) + '</td><td class="num ' + (o.montant < 0 ? 'neg' : 'pos') + '">' + euros(o.montant) + '</td></tr>';
+      }).join('') : '<tr><td colspan="5">Aucune écriture</td></tr>';
+    }).catch(erreur);
+  }
+
+  // ---------- adhérents ----------
+  function chercherLicence(btn) {
+    var lic = val('adLicence');
+    if (!lic) return toast('Saisissez un numéro de licence', true);
+    occuper(btn, true);
+    appel('chercherLicenceWeb', [lic]).then(function (a) {
+      var b = $('bandeauLicence');
+      if (a) {
+        b.className = 'bandeau reinscr';
+        b.textContent = '🔁 Licence connue : ' + a.nom + ' – le bouton réinscrira cet adhérent pour la nouvelle saison (pas de frais d\'adhésion).';
+        $('adNom').value = a.nom; $('adEmail').value = a.email; $('adTel').value = a.tel; $('adAdresse').value = a.adresse;
+        $('zoneFrais').style.display = 'none';
+        $('btnAdherent').textContent = '🔁 Réinscrire';
+      } else {
+        b.className = 'bandeau nouveau';
+        b.textContent = '🆕 Nouvelle licence : complétez la fiche.';
+        ['adNom', 'adEmail', 'adTel', 'adAdresse', 'adNotes'].forEach(function (id) { $(id).value = ''; });
+        $('zoneFrais').style.display = '';
+        $('btnAdherent').textContent = '💾 Créer l\'adhérent';
+      }
+    }).catch(erreur).finally(function () { occuper(btn, false); });
+  }
+
+  function enregistrerAdherent(btn, forcer) {
+    var d = { licence: val('adLicence'), nom: val('adNom'), email: val('adEmail'), tel: val('adTel'),
+              adresse: val('adAdresse'), fraisAdhesion: val('adFrais'), cotisation: val('adCotisation'),
+              notes: val('adNotes'), forcer: !!forcer };
+    if (!d.licence) return toast('Le numéro de licence est obligatoire', true);
+    occuper(btn, true);
+    appel('enregistrerAdherentWeb', [d]).then(function (r) {
+      toast(r.message);
+      ['adLicence', 'adNom', 'adEmail', 'adTel', 'adAdresse', 'adNotes'].forEach(function (id) { $(id).value = ''; });
+      $('bandeauLicence').className = 'bandeau'; $('zoneFrais').style.display = '';
+      $('btnAdherent').textContent = '💾 Enregistrer';
+      chargerAdherents();
+    }).catch(function (e) {
+      var m = (e && e.message) || String(e);
+      if (m.indexOf('DEJA_A_JOUR') >= 0) {
+        if (confirm(m.replace(/^.*DEJA_A_JOUR: /, '') + '\n\nContinuer quand même ?')) { occuper(btn, false); return enregistrerAdherent(btn, true); }
+        return;
+      }
+      erreur(e);
+    }).finally(function () { occuper(btn, false); });
+  }
+
+  function chargerAdherents() {
+    appel('listerAdherentsWeb').then(function (l) { ADHERENTS = l; afficherAdherents(); }).catch(erreur);
+  }
+
+  function tagSaison(s) {
+    if (s === 'À jour') return '<span class="tag ok">À jour</span>';
+    if (s === 'Paiement partiel') return '<span class="tag part">Partiel</span>';
+    return '<span class="tag att">' + esc(s || 'En attente') + '</span>';
+  }
+
+  function afficherAdherents() {
+    var f = val('filtreAdh').toLowerCase();
+    var l = ADHERENTS.filter(function (a) { return !f || a.nom.toLowerCase().indexOf(f) >= 0 || a.licence.toLowerCase().indexOf(f) >= 0; });
+    $('tAdh').innerHTML = l.length ? l.map(function (a, i) {
+      var cle = a.licence || a.id;
+      return '<tr><td>' + esc(a.licence || '—') + '</td><td>' + esc(a.nom) + '</td><td>' + tagSaison(a.statut) + '</td><td>' +
+        (a.adhesionDue ? '<span class="tag att">Due</span>' : '<span class="tag ok">Réglée</span>') + '</td><td class="num">' +
+        euros(a.resteDu) + '</td><td style="white-space:nowrap">' +
+        '<button class="btn mini" data-cle="' + esc(cle) + '" onclick="ouvrirPaiement(this.dataset.cle)">💰 Paiement</button>' +
+        '<button class="btn mini sec" data-cle="' + esc(cle) + '" onclick="action(\'genererFactureWeb\', [this.dataset.cle], this)">🧾 Facture</button></td></tr>';
+    }).join('') : '<tr><td colspan="6">Aucun adhérent</td></tr>';
+  }
+
+  function ouvrirPaiement(cle) {
+    var a = ADHERENTS.filter(function (x) { return (x.licence || x.id) === cle; })[0];
+    if (!a) return;
+    PAIEMENT = a;
+    $('titrePaiement').textContent = '💰 Paiement – ' + a.nom + ' (reste dû ' + euros(a.resteDu) + ')';
+    $('pNature').value = a.adhesionDue && a.cotisationRestante > 0 ? 'les_deux' : (a.adhesionDue ? 'adhesion' : 'cotisation');
+    majMontantPaiement();
+    $('panneauPaiement').style.display = 'block';
+    $('panneauPaiement').scrollIntoView({ behavior: 'smooth' });
+  }
+
+  function majMontantPaiement() {
+    if (!PAIEMENT) return;
+    var n = $('pNature').value;
+    var m = n === 'adhesion' ? PAIEMENT.frais : n === 'cotisation' ? PAIEMENT.cotisationRestante : PAIEMENT.resteDu;
+    $('pMontant').value = String(m).replace('.', ',');
+  }
+
+  function fermerPaiement() { $('panneauPaiement').style.display = 'none'; PAIEMENT = null; }
+
+  function validerPaiement(btn) {
+    if (!PAIEMENT) return;
+    var d = { cle: PAIEMENT.licence || PAIEMENT.id, nature: val('pNature'), montant: val('pMontant'), mode: val('pMode'),
+              date: val('pDate'), compta: $('pCompta').checked, recu: $('pRecu').checked };
+    occuper(btn, true);
+    appel('enregistrerPaiementWeb', [d]).then(function (r) {
+      toast(r.message, false, r.url);
+      fermerPaiement();
+      chargerAdherents();
+    }).catch(erreur).finally(function () { occuper(btn, false); });
+  }
+
+  // ---------- dons ----------
+  $('dNature').addEventListener('change', function () {
+    var enNature = this.value === 'Don en nature';
+    $('dMode').disabled = enNature; $('dCompta').checked = !enNature; $('dCompta').disabled = enNature;
+  });
+
+  function ajouterDon(btn) {
+    var d = { nom: val('dNom'), email: val('dEmail'), montant: val('dMontant'), date: val('dDate'), nature: val('dNature'),
+              mode: val('dMode'), adresse: val('dAdresse'), compta: $('dCompta').checked, recu: $('dRecu').checked };
+    if (!d.nom || !d.montant || !d.adresse) return toast('Nom, montant et adresse obligatoires', true);
+    occuper(btn, true);
+    appel('ajouterDonWeb', [d]).then(function (r) {
+      toast(r.message, false, r.url);
+      ['dNom', 'dEmail', 'dMontant', 'dAdresse'].forEach(function (id) { $(id).value = ''; });
+      chargerDons();
+    }).catch(erreur).finally(function () { occuper(btn, false); });
+  }
+
+  function chargerDons() {
+    appel('listerDonsWeb').then(function (l) {
+      $('tDons').innerHTML = l.length ? l.map(function (d) {
+        return '<tr><td>' + esc(d.date) + '</td><td>' + esc(d.nom) + '</td><td>' + esc(d.nature) + '</td><td class="num">' +
+          euros(d.montant) + '</td><td>' + esc(d.numero || '—') + '</td><td><button class="btn mini sec" data-id="' + esc(d.id) +
+          '" onclick="action(\'genererRecuDonWeb\', [this.dataset.id], this)">📜 ' + (d.numero ? 'Duplicata' : 'Reçu') + '</button></td></tr>';
+      }).join('') : '<tr><td colspan="6">Aucun don</td></tr>';
+    }).catch(erreur);
+  }
+
+  // ---------- fichiers ----------
+  function lireFichier(fichier) {
+    return new Promise(function (ok, ko) {
+      if (fichier.size > 15 * 1024 * 1024) return ko(new Error('Fichier trop volumineux (15 Mo maximum)'));
+      var lecteur = new FileReader();
+      lecteur.onload = function () {
+        var url = String(lecteur.result);
+        ok({ base64: url.slice(url.indexOf(',') + 1), nom: fichier.name, mime: fichier.type || 'application/octet-stream' });
+      };
+      lecteur.onerror = function () { ko(new Error('Lecture du fichier impossible')); };
+      lecteur.readAsDataURL(fichier);
+    });
+  }
+
+  // ---------- historique ----------
+  function filtresHisto() {
+    return { annee: val('hAnnee'), categorie: val('hCategorie'), source: val('hSource'), rapproche: val('hRap'), texte: val('hTexte') };
+  }
+
+  function chercherHistorique(btn) {
+    if (!CTX) return;
+    occuper(btn, true);
+    appel('rechercherOperationsWeb', [filtresHisto()]).then(function (r) {
+      $('hResume').innerHTML = '<span><b>' + r.total + '</b> écriture(s)' + (r.total > 500 ? ' (500 affichées)' : '') + '</span>' +
+        '<span>Recettes <b class="pos">' + euros(r.recettes) + '</b></span><span>Dépenses <b class="neg">' + euros(r.depenses) + '</b></span>' +
+        '<span>Solde <b>' + euros(r.recettes - r.depenses) + '</b></span>';
+      $('tHisto').innerHTML = r.lignes.length ? r.lignes.map(function (o) {
+        var piece = o.justif ? '<a href="' + esc(o.justif) + '" target="_blank" rel="noopener" title="Ouvrir le justificatif">📎</a>'
+          : '<button class="btn mini sec" data-ligne="' + o.ligne + '" onclick="joindre(this.dataset.ligne)">Joindre</button>';
+        return '<tr><td>' + esc(o.date) + '</td><td>' + esc(o.libelle) + (o.tiers ? '<br><small style="color:var(--gris)">' + esc(o.tiers) + '</small>' : '') +
+          '</td><td>' + esc(o.categorie) + '</td><td>' + esc(o.source) + '</td><td class="num ' + (o.montant < 0 ? 'neg' : 'pos') + '">' + euros(o.montant) +
+          '</td><td><button class="rap" data-ligne="' + o.ligne + '" onclick="basculerRap(this)">' + (o.source === 'Banque' ? (o.rapproche ? '✅' : '⬜') : '–') +
+          '</button></td><td>' + piece + '</td></tr>';
+      }).join('') : '<tr><td colspan="7">Aucune écriture pour ces critères</td></tr>';
+    }).catch(erreur).finally(function () { occuper(btn, false); });
+  }
+
+  function exporterHistorique(btn) { action('exporterOperationsWeb', [filtresHisto()], btn); }
+
+  function basculerRap(b) {
+    b.disabled = true;
+    appel('basculerRapprochementWeb', [Number(b.dataset.ligne)]).then(function (r) { b.textContent = r.rapproche ? '✅' : '⬜'; })
+      .catch(erreur).finally(function () { b.disabled = false; });
+  }
+
+  var LIGNE_A_JOINDRE = 0;
+  function joindre(ligne) { LIGNE_A_JOINDRE = Number(ligne); $('fichierLigne').value = ''; $('fichierLigne').click(); }
+  $('fichierLigne').addEventListener('change', function () {
+    var f = this.files[0];
+    if (!f || !LIGNE_A_JOINDRE) return;
+    toast('Envoi du justificatif…');
+    lireFichier(f).then(function (x) { x.ligne = LIGNE_A_JOINDRE; return appel('televerserJustificatifWeb', [x]); })
+      .then(function (r) { toast(r.message, false, r.url); chercherHistorique(); }).catch(erreur);
+  });
+
+  // ---------- banque ----------
+  var RELEVE = null;
+  function analyserReleve(btn) {
+    var f = $('releve').files[0];
+    if (!f) return toast('Choisissez d\'abord un fichier', true);
+    occuper(btn, true);
+    lireFichier(f).then(function (x) {
+      if (x.mime === 'application/pdf' || /\.pdf$/i.test(x.nom)) {
+        x.mime = 'application/pdf';
+        return appel('archiverRelevePdfWeb', [x]).then(function (r) {
+          toast(r.message + '\nPour le rapprochement automatique, importez la version CSV du relevé.', false, r.url);
+        });
+      }
+      return appel('analyserReleveWeb', [x]).then(function (r) {
+        RELEVE = { base64: x.base64, nom: x.nom, lignes: r.lignes.map(function (l) { l.importer = l.statut !== 'deja'; return l; }) };
+        $('rResume').innerHTML = '<span>🆕 <b>' + r.nouveaux + '</b> nouvelle(s) opération(s)</span><span>🔗 <b>' + r.aRapprocher +
+          '</b> déjà saisie(s), à rapprocher</span><span>✅ <b>' + r.deja + '</b> déjà rapprochée(s)</span>';
+        afficherReleve();
+        $('blocApercu').style.display = 'block';
+      });
+    }).catch(erreur).finally(function () { occuper(btn, false); });
+  }
+
+  function afficherReleve() {
+    $('tReleve').innerHTML = RELEVE.lignes.map(function (l, i) {
+      var tag = l.statut === 'nouveau' ? '<span class="tag part">Nouvelle</span>'
+              : l.statut === 'rapprocher' ? '<span class="tag ok">À rapprocher</span>' : '<span class="tag">Déjà fait</span>';
+      var detail = l.statut === 'nouveau'
+        ? '<input type="text" list="listeCategories" value="' + esc(l.categorie) + '" data-i="' + i + '" oninput="RELEVE.lignes[this.dataset.i].categorie=this.value">'
+        : '<small>' + esc(l.libelleCompta) + '</small>';
+      return '<tr><td><input type="checkbox" data-i="' + i + '" ' + (l.importer ? 'checked' : '') + (l.statut === 'deja' ? ' disabled' : '') +
+        ' onchange="RELEVE.lignes[this.dataset.i].importer=this.checked"></td><td>' + esc(l.date) + '</td><td>' + esc(l.libelle) +
+        '</td><td class="num ' + (l.montant < 0 ? 'neg' : 'pos') + '">' + euros(l.montant) + '</td><td>' + tag + '</td><td>' + detail + '</td></tr>';
+    }).join('');
+  }
+
+  function importerReleve(btn) {
+    if (!RELEVE) return;
+    occuper(btn, true);
+    appel('importerReleveWeb', [RELEVE]).then(function (r) {
+      toast(r.message, false, r.url);
+      RELEVE = null; $('blocApercu').style.display = 'none'; $('releve').value = '';
+    }).catch(erreur).finally(function () { occuper(btn, false); });
+  }
+
+  // ---------- budget ----------
+  var BUDGET = [];
+  function chargerBudget(btn) {
+    var a = val('bAnnee');
+    if (!a) return;
+    occuper(btn, true);
+    appel('budgetWeb', [Number(a)]).then(function (b) {
+      $('bLibelle').textContent = b.libelle;
+      BUDGET = b.lignes;
+      afficherBudget();
+    }).catch(erreur).finally(function () { occuper(btn, false); });
+  }
+
+  function proposerBudget(btn) {
+    occuper(btn, true);
+    appel('proposerBudgetWeb', [Number(val('bAnnee'))]).then(function (prop) {
+      if (!prop.length) return toast('Aucun réalisé sur l\'exercice précédent', true);
+      prop.forEach(function (p) {
+        var ex = BUDGET.filter(function (l) { return l.type === p.type && l.categorie === p.categorie; })[0];
+        if (ex) ex.prevu = p.prevu; else BUDGET.push({ categorie: p.categorie, type: p.type, prevu: p.prevu, realise: 0 });
+      });
+      afficherBudget();
+      toast('Montants proposés : vérifiez-les puis enregistrez');
+    }).catch(erreur).finally(function () { occuper(btn, false); });
+  }
+
+  function ajouterLigneBudget() { BUDGET.push({ categorie: '', type: 'Depense', prevu: 0, realise: 0 }); afficherBudget(); }
+  function supprimerLigneBudget(i) { BUDGET.splice(i, 1); afficherBudget(); }
+
+  function majBudget(i, champ, v) {
+    BUDGET[i][champ] = champ === 'prevu' ? (parseFloat(String(v).replace(',', '.')) || 0) : v;
+    totauxBudget();
+  }
+
+  function afficherBudget() {
+    $('tBudget').innerHTML = BUDGET.length ? BUDGET.map(function (l, i) {
+      var pct = l.prevu ? Math.min(100, Math.round(l.realise / l.prevu * 100)) : (l.realise ? 100 : 0);
+      var depasse = l.type === 'Depense' && l.prevu && l.realise > l.prevu;
+      return '<tr><td><select onchange="majBudget(' + i + ',\'type\',this.value)"><option value="Recette"' + (l.type === 'Recette' ? ' selected' : '') +
+        '>Recette</option><option value="Depense"' + (l.type !== 'Recette' ? ' selected' : '') + '>Dépense</option></select></td>' +
+        '<td><input type="text" list="listeCategories" value="' + esc(l.categorie) + '" oninput="majBudget(' + i + ',\'categorie\',this.value)"></td>' +
+        '<td class="num"><input type="text" inputmode="decimal" style="width:90px;text-align:right" value="' + String(l.prevu).replace('.', ',') +
+        '" oninput="majBudget(' + i + ',\'prevu\',this.value)"></td><td class="num">' + euros(l.realise) + '</td>' +
+        '<td><div class="progres"><span style="width:' + pct + '%;background:' + (depasse ? 'var(--rouge)' : 'var(--vert)') + '"></span></div><small>' +
+        (l.prevu ? Math.round(l.realise / l.prevu * 100) + ' %' : '—') + '</small></td>' +
+        '<td><button class="btn mini sec" onclick="supprimerLigneBudget(' + i + ')">✕</button></td></tr>';
+    }).join('') : '<tr><td colspan="6">Aucune ligne : ajoutez-en ou partez du réalisé précédent</td></tr>';
+    totauxBudget();
+  }
+
+  function totauxBudget() {
+    var s = { pr: 0, rr: 0, pd: 0, rd: 0 };
+    BUDGET.forEach(function (l) { if (l.type === 'Recette') { s.pr += l.prevu; s.rr += l.realise; } else { s.pd += l.prevu; s.rd += l.realise; } });
+    $('bR').textContent = euros(s.pr) + ' / ' + euros(s.rr);
+    $('bD').textContent = euros(s.pd) + ' / ' + euros(s.rd);
+    $('bRp').style.width = (s.pr ? Math.min(100, s.rr / s.pr * 100) : 0) + '%';
+    $('bDp').style.width = (s.pd ? Math.min(100, s.rd / s.pd * 100) : 0) + '%';
+    $('bRes').textContent = euros(s.pr - s.pd);
+    $('bRes').className = 'v ' + (s.pr - s.pd >= 0 ? 'pos' : 'neg');
+  }
+
+  function enregistrerBudget(btn) {
+    action('enregistrerBudgetWeb', [Number(val('bAnnee')), BUDGET.map(function (l) { return { categorie: l.categorie, type: l.type, prevu: l.prevu }; })], btn);
+  }
+</script>
+</body>
+</html>
