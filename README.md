@@ -21,11 +21,12 @@ coordonnées du club, IBAN…) restent dans le Google Sheets et le Google Drive 
 
 1. Onglets attendus : `Operations_Historique`, `Membres_Cotisations`, `Configuration`
    (les onglets `Dons_Recus`, `Budget`, `Dashboard` sont créés automatiquement).
-2. Dossiers Drive : `01_Données_Principales` (logo), `02_Factures_PDF`,
-   `03_Relevés_Bancaires`, `04_Justificatifs`, `05_Archives_Annuelles`, `06_Sauvegardes`.
-3. Extensions → Apps Script : coller `Code.js` dans `Code.gs` et créer le fichier HTML `interface`.
-4. Dans le Sheets : menu 🏛️ Association → 🔧 Maintenance → *Compléter l'onglet Configuration*,
-   puis renseigner les valeurs.
+2. Extensions → Apps Script : coller `Code.js` dans `Code.gs` et créer le fichier HTML `interface`.
+3. Dans le Sheets : menu 🏛️ Association → 🔧 Maintenance → *Installer les dossiers Drive*.
+   Crée `Comptabilité Association` et ses 6 sous-dossiers, range le Sheets dans
+   `01_Données_Principales` et enregistre l'identifiant de chaque dossier dans `Configuration`
+   (aucune confusion possible avec des dossiers homonymes d'un autre compte).
+4. Déposer le logo dans `01_Données_Principales`, puis renseigner l'onglet `Configuration`.
 5. Déclencheur quotidien sur `sauvegardeAutomatique`.
 6. Déployer → Application Web (exécuter en tant que moi, accès moi uniquement).
 

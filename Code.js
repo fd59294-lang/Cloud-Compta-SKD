@@ -39,6 +39,17 @@ const DOSSIER = {
   SAUVEGARDES: '06_Sauvegardes'
 };
 
+// Identifiant de chaque dossier, enregistré dans l'onglet Configuration par « Installer les dossiers »
+const CLE_DOSSIER = {
+  '01_Données_Principales': 'Dossier_Donnees_ID',
+  '02_Factures_PDF': 'Dossier_Documents_ID',
+  '03_Relevés_Bancaires': 'Dossier_Releves_ID',
+  '04_Justificatifs': 'Dossier_Justificatifs_ID',
+  '05_Archives_Annuelles': 'Dossier_Archives_ID',
+  '06_Sauvegardes': 'Dossier_Sauvegardes_ID'
+};
+const NOM_DOSSIER_RACINE = 'Comptabilité Association';
+
 // Colonnes (index à partir de 0)
 const OP = { DATE: 0, LIBELLE: 1, MONTANT: 2, TYPE: 3, CATEGORIE: 4, TIERS: 5, NOTES: 6,
              PIECE: 7, SOURCE: 8, RAPPROCHE: 9, SOLDE: 10, NB: 11, JUSTIF: 11 };
@@ -114,6 +125,7 @@ function onOpen() {
     .addItem('💾 Sauvegarde maintenant', 'sauvegardeManuelle')
     .addSeparator()
     .addSubMenu(ui.createMenu('🔧 Maintenance')
+      .addItem('Installer les dossiers Drive', 'installerDossiers')
       .addItem('Compléter l\'onglet Configuration', 'completerConfiguration')
       .addItem('Vérifier la structure des onglets', 'verifierStructure'))
     .addToUi();
@@ -129,10 +141,50 @@ function feuille_(nom) {
   return sh;
 }
 
+/**
+ * Retrouve un dossier du club : d'abord par son identifiant (onglet Configuration),
+ * sinon à côté du Google Sheets, sinon par son nom dans tout le Drive.
+ */
 function dossier_(nom) {
+  const cle = CLE_DOSSIER[nom];
+  if (cle) {
+    const id = texte_(lireConfiguration()[cle]);
+    if (id) {
+      try { return DriveApp.getFolderById(id); } catch (e) { /* identifiant périmé : on cherche autrement */ }
+    }
+  }
+  try {
+    const racine = racineClub_();
+    if (racine) {
+      const local = racine.getFoldersByName(nom);
+      if (local.hasNext()) return local.next();
+    }
+  } catch (e) { /* on continue */ }
   const it = DriveApp.getFoldersByName(nom);
-  if (!it.hasNext()) throw new Error('Dossier "' + nom + '" introuvable dans Google Drive');
+  if (!it.hasNext()) throw new Error('Dossier "' + nom + '" introuvable : lancez 🔧 Maintenance → Installer les dossiers');
   return it.next();
+}
+
+/** Dossier racine du club = parent du dossier qui contient le Google Sheets. */
+function racineClub_() {
+  const fichier = DriveApp.getFileById(SpreadsheetApp.getActiveSpreadsheet().getId());
+  const parents = fichier.getParents();
+  if (!parents.hasNext()) return null;
+  const p = parents.next();
+  if (p.getName() === '01_Données_Principales') {
+    const gp = p.getParents();
+    return gp.hasNext() ? gp.next() : p;
+  }
+  return p.getName() === NOM_DOSSIER_RACINE ? p : null;
+}
+
+function ecrireConfig_(cle, valeur) {
+  const sh = feuille_(ONGLET.CONFIG);
+  const vals = sh.getDataRange().getValues();
+  for (let i = 1; i < vals.length; i++) {
+    if (texte_(vals[i][0]) === cle) { sh.getRange(i + 1, 2).setValue(valeur); return; }
+  }
+  sh.appendRow([cle, valeur]);
 }
 
 function texte_(v) {
@@ -1982,4 +2034,54 @@ function proposerBudgetWeb(annee) {
   return prec.lignes.filter(function (l) { return l.realise > 0; }).map(function (l) {
     return { categorie: l.categorie, type: l.type, prevu: Math.ceil(l.realise / 10) * 10 };
   });
+}
+
+// ---------------------------------------------------------------------------
+// 18. INSTALLATION SUR UN NOUVEAU COMPTE GOOGLE
+// ---------------------------------------------------------------------------
+
+/**
+ * Crée (ou retrouve) l'arborescence du club à côté du Google Sheets, range le Sheets
+ * dans 01_Données_Principales et enregistre l'identifiant de chaque dossier dans Configuration.
+ * Sans danger si on la relance : rien n'est supprimé ni dupliqué.
+ */
+function installerDossiers() {
+  proteger_(function () {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const fichier = DriveApp.getFileById(ss.getId());
+    let racine = racineClub_();
+    if (!racine) {
+      const parents = fichier.getParents();
+      const parent = parents.hasNext() ? parents.next() : DriveApp.getRootFolder();
+      const existe = parent.getFoldersByName(NOM_DOSSIER_RACINE);
+      racine = existe.hasNext() ? existe.next() : parent.createFolder(NOM_DOSSIER_RACINE);
+    }
+    const crees = [], trouves = [];
+    Object.keys(CLE_DOSSIER).forEach(function (nom) {
+      const it = racine.getFoldersByName(nom);
+      let d;
+      if (it.hasNext()) { d = it.next(); trouves.push(nom); }
+      else { d = racine.createFolder(nom); crees.push(nom); }
+      ecrireConfig_(CLE_DOSSIER[nom], d.getId());
+    });
+    const donnees = DriveApp.getFolderById(lireConfiguration()[CLE_DOSSIER['01_Données_Principales']]);
+    const dejaRange = fichier.getParents().hasNext() && fichier.getParents().next().getId() === donnees.getId();
+    if (!dejaRange) fichier.moveTo(donnees);
+    completerConfigurationSilencieuse_();
+    const logo = logoBlob_(lireConfiguration());
+    info_('✅ Dossiers prêts dans « ' + racine.getName() + ' » (compte ' + Session.getEffectiveUser().getEmail() + ')\n\n' +
+          (crees.length ? 'Créés : ' + crees.join(', ') + '\n' : '') +
+          (trouves.length ? 'Déjà présents : ' + trouves.join(', ') + '\n' : '') +
+          (dejaRange ? '' : 'Le Google Sheets a été rangé dans 01_Données_Principales.\n') +
+          (logo ? '' : '\n⚠️ Logo introuvable : déposez-le dans 01_Données_Principales sous le nom indiqué en Configuration (Logo_Fichier).'));
+  });
+}
+
+function completerConfigurationSilencieuse_() {
+  const sh = feuille_(ONGLET.CONFIG);
+  const vals = sh.getDataRange().getValues();
+  const existantes = {};
+  for (let i = 1; i < vals.length; i++) existantes[texte_(vals[i][0])] = true;
+  const ajouts = CONFIG_CLES.filter(function (c) { return !existantes[c[0]]; });
+  if (ajouts.length) sh.getRange(sh.getLastRow() + 1, 1, ajouts.length, 2).setValues(ajouts);
 }
