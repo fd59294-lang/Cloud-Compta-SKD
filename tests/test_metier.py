@@ -189,3 +189,38 @@ def test_pointage_sur_releve_posterieur():
     assert metier.soldes(t, jusqu_au=date(2024, 9, 30))["pointe"] == -3
     assert metier.soldes(t, jusqu_au=date(2024, 10, 31))["pointe"] == 34
     assert metier.verrouillees(t, date(2024, 9, 30)).sum() == 1
+
+
+def test_installation_depuis_application():
+    import time
+    from urllib.parse import parse_qs, urlparse
+    import installation as I
+    auth = {"client_id": "id", "client_secret": "s", "cookie_secret": "secret",
+            "redirect_uri": "https://skd.streamlit.app/oauth2callback"}
+    q = parse_qs(urlparse(I.url_autorisation(auth, "club@gmail.com")).query)
+    assert q["redirect_uri"] == ["https://skd.streamlit.app/"] and q["access_type"] == ["offline"]
+    assert I.etat_valide(q["state"][0], "secret") and not I.etat_valide(q["state"][0], "autre")
+    assert not I.etat_valide(I._etat("secret", int(time.time()) - 3600), "secret")
+    bloc = I.bloc_club({"compte": "Club@gmail.com", "spreadsheet_id": "abc", "dossiers": {"_racine": "r"},
+                        "google_credentials": {"refresh_token": "x"}}, ["club@gmail.com", "fred@gmail.com"])
+    assert 'admins = "club@gmail.com, fred@gmail.com"' in bloc and 'backend = "google"' in bloc
+
+
+def test_page_installation_affiche_le_bouton():
+    from streamlit.testing.v1 import AppTest
+
+    def page():
+        import installation
+        installation.page_installation({"admins": ["club@gmail.com"]})
+
+    at = AppTest.from_function(page)
+    at.secrets["auth"] = {"client_id": "id", "client_secret": "s", "cookie_secret": "c",
+                          "redirect_uri": "https://skd.streamlit.app/oauth2callback",
+                          "server_metadata_url": "https://accounts.google.com/.well-known/openid-configuration"}
+    at.run(timeout=30)
+    assert not at.exception
+    assert "Installation dans le Drive du club" in at.title[0].value
+    at.query_params["code"] = "x"
+    at.query_params["state"] = "faux"
+    at.run(timeout=30)
+    assert any("expiré ou invalide" in e.value for e in at.error)

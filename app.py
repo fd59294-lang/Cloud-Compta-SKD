@@ -56,6 +56,14 @@ def controler_acces() -> bool:
         st.button("Se connecter avec Google", type="primary", on_click=st.login)
         return False
     email = str(st.user.email).lower()
+    if conf.get("backend") == "installation":       # premier lancement : relier le Drive du club
+        if email in (conf.get("admins") or []):
+            from installation import page_installation
+            page_installation(conf)
+        else:
+            st.error(f"Installation en cours : seul un compte listé dans « admins » peut la faire ({email} ne l'est pas).")
+            st.button("Se déconnecter", on_click=st.logout)
+        return False
     users = charger("utilisateurs")
     ligne = users[users["email"].str.lower() == email]
     if ligne.empty and email in (conf.get("admins") or []):

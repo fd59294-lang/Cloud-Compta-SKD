@@ -3,9 +3,9 @@
 Même méthode que pour le Comité des Fêtes, mais tout est propre au club (projet Google Cloud, Drive, hébergement). Durée : environ 30 minutes, une seule fois.
 
 ```
-① Google Cloud        ② Installation Drive        ③ Streamlit Cloud       ④ Premier lancement
-identifiants OAuth ──► script installer_google ──► depuis GitHub + ──► import de la reprise
-(projet du club)       (crée Sheets + dossiers)    secrets              (banque = 213,46 €)
+① Google Cloud        ② Streamlit Cloud          ③ Installation Drive         ④ Premier lancement
+projet du club   ──►  depuis GitHub +       ──►  bouton dans l'application ──► import de la reprise
+client « Web »        secrets de départ          (crée Sheets + dossiers)     (banque = 213,46 €)
 ```
 
 ## ① Projet Google Cloud du club (propre à Sensei Karaté Do)
@@ -13,44 +13,22 @@ identifiants OAuth ──► script installer_google ──► depuis GitHub + �
 Aucun élément partagé avec le Comité des Fêtes : projet, identifiants, Drive et données sont ceux du club.
 Connectez-vous à https://console.cloud.google.com avec **senseikaratedo59@gmail.com**.
 
-1. En haut, sélecteur de projet → **Nouveau projet** → nom `Sensei Karate Do Gestion` → Créer, puis
-   sélectionnez-le.
-2. **API et services → Bibliothèque** : activez *Google Drive API* puis *Google Sheets API*.
-3. **API et services → Écran de consentement OAuth** (ou *Google Auth Platform*) :
-   type **Externe** ; nom de l'application `Sensei Karaté Do — Gestion` ; e-mail d'assistance et contact :
-   `senseikaratedo59@gmail.com`. Dans **Audience → Utilisateurs test**, ajoutez `senseikaratedo59@gmail.com`
-   et l'adresse Google de chaque membre du bureau qui utilisera le logiciel.
-4. **Identifiants (ou Clients) → Créer un ID client OAuth**, deux fois :
-   - type **Application de bureau**, nom `installation` → téléchargez le JSON ;
-   - type **Application Web**, nom `logiciel`, *URI de redirection autorisés* :
-     `https://sensei-karate-do-haussy.streamlit.app/oauth2callback` → notez l'ID client et le code secret.
+1. Projet `Sensei Karate Do Gestion`.
+2. **API et services → Bibliothèque** : activez *Google Drive API* et *Google Sheets API*.
+3. **Écran de consentement OAuth** : type **Externe**, nom `Sensei Karaté Do — Gestion`, e-mail
+   `senseikaratedo59@gmail.com` ; **Utilisateurs test** : `senseikaratedo59@gmail.com` + l'adresse Google de
+   chaque membre du bureau qui utilisera le logiciel.
+4. **Client OAuth « Application Web »** avec **deux** *URI de redirection autorisés* :
+   - `https://sensei-karate-do-haussy.streamlit.app/oauth2callback` (connexion au logiciel)
+   - `https://sensei-karate-do-haussy.streamlit.app/` (installation dans le Drive, étape ③)
 
-## ② Installation dans le Drive du club (une seule fois)
+## ② Hébergement sur Streamlit Community Cloud (comme `comite-fetes-haussy.streamlit.app`)
 
-Sur n'importe quel ordinateur avec Python :
-
-```bash
-pip install google-auth-oauthlib gspread google-api-python-client
-python outils/installer_google.py client_secret_bureau.json
-```
-
-Connectez-vous avec **le compte du club**. Le script crée dans son Drive :
-- le classeur **« Sensei Karaté Do — Données »** (une page par table : opérations, adhérents…) ;
-- le dossier **« Sensei Karaté Do — Gestion »** et ses sous-dossiers (Sauvegardes, Factures et reçus,
-  Reçus fiscaux, Rapports, Relevés bancaires, Justificatifs, Imports, Logo).
-
-Il affiche ensuite un bloc `[club]` : copiez-le, il sert à l'étape ③. Ne le partagez pas et ne le mettez
-jamais dans GitHub. Supprimez ensuite le fichier `client_secret_bureau.json` de l'ordinateur.
-
-## ③ Hébergement sur Streamlit Community Cloud (comme `comite-fetes-haussy.streamlit.app`)
-
-1. Ouvrez https://share.streamlit.io (connexion avec le compte GitHub `fd59294-lang`, propriétaire du dépôt)
-   → **Create app** →
+1. https://share.streamlit.io (compte GitHub `fd59294-lang`, propriétaire du dépôt) → **Create app** →
    **Deploy a public app from GitHub**.
-2. Renseignez :
-   - *Repository* : `fd59294-lang/Cloud-Compta-SKD` — *Branch* : `main` — *Main file path* : `app.py`
-   - *App URL* : `sensei-karate-do-haussy` → adresse **https://sensei-karate-do-haussy.streamlit.app**
-3. **Advanced settings** : *Python version* **3.12**, puis collez dans *Secrets* :
+2. *Repository* `fd59294-lang/Cloud-Compta-SKD` — *Branch* `main` — *Main file path* `app.py` —
+   *App URL* `sensei-karate-do-haussy`.
+3. **Advanced settings** : *Python version* **3.12** ; *Secrets* (secrets **de départ**) :
 
 ```toml
 [auth]
@@ -60,15 +38,28 @@ client_id = "… (client « Application Web »)"
 client_secret = "…"
 server_metadata_url = "https://accounts.google.com/.well-known/openid-configuration"
 
-# + le bloc [club] affiché par le script de l'étape ②
+[club]
+backend = "installation"
+admins = "senseikaratedo59@gmail.com"
 ```
 
-4. **Deploy**. Dans Google Cloud (projet du club), *Écran de consentement → Lien vers la page d'accueil / règles de confidentialité*, mettez
-   `https://sensei-karate-do-haussy.streamlit.app/?page=confidentialite`.
+4. **Deploy**. Dans Google Cloud (projet du club), *Écran de consentement → page d'accueil / règles de
+   confidentialité* : `https://sensei-karate-do-haussy.streamlit.app/?page=confidentialite`.
 
-Ajoutez dans `admins` (bloc `[club]`) votre adresse Google personnelle si vous voulez vous connecter avec :
-toute adresse listée dans `admins` est créée automatiquement comme président(e) à sa première connexion.
-Les secrets se modifient ensuite dans *Manage app → Settings → Secrets* (jamais dans GitHub).
+## ③ Installation dans le Drive du club (depuis l'application, aucun PC nécessaire)
+
+1. Ouvrez https://sensei-karate-do-haussy.streamlit.app → **Se connecter avec Google** (compte du club).
+2. Page « Installation dans le Drive du club » → **Autoriser l'accès au Drive du club** → compte du club →
+   accepter (si « Application non validée » : *Paramètres avancés → Accéder à l'application*).
+3. L'application crée le classeur **« Sensei Karaté Do — Données »** et le dossier **« Sensei Karaté Do —
+   Gestion »** (Sauvegardes, Factures et reçus, Reçus fiscaux, Rapports, Relevés bancaires, Justificatifs,
+   Imports, Logo), puis affiche le **bloc `[club]` définitif**.
+4. Streamlit → *Manage app → Settings → Secrets* : remplacez le bloc `[club]` de départ par ce bloc (gardez
+   `[auth]`), *Save*. L'application redémarre reliée au Drive. Pour vous connecter aussi avec votre adresse
+   personnelle, ajoutez-la dans `admins` (séparée par une virgule).
+
+Variante sans l'application : `python outils/installer_google.py client_bureau.json` sur un ordinateur avec
+Python (client OAuth « Application de bureau »).
 
 ## ④ Premier lancement
 
