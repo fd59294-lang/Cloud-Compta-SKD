@@ -424,6 +424,15 @@ def convertir_modele(contenu: bytes, df_categories: pd.DataFrame, utilisateur: s
 
 
 # ------------------------------------------------------------------ relevé bancaire CSV
+def lire_releve(contenu: bytes, nom_fichier: str = "") -> pd.DataFrame:
+    """Lit un relevé exporté par la banque : CSV, ou Excel (.xlsx, export du Crédit Mutuel par exemple).
+
+    Le solde de fin éventuel (« Solde au 31/10/2026 : 213,46 ») est rendu dans .attrs["solde_fin"] = (date, solde)."""
+    if nom_fichier.lower().endswith((".xlsx", ".xls")) or contenu[:2] == b"PK":
+        return lire_releve_excel(contenu)
+    return lire_releve_csv(contenu)
+
+
 def lire_releve_csv(contenu: bytes) -> pd.DataFrame:
     """Lit un relevé CSV de banque : en-tête avec Date + Libellé + (Débit/Crédit ou Montant)."""
     try:
@@ -432,9 +441,27 @@ def lire_releve_csv(contenu: bytes) -> pd.DataFrame:
         texte = contenu.decode("latin-1")
     debut = "\n".join(texte.splitlines()[:15])
     sep = ";" if debut.count(";") >= debut.count(",") else ("\t" if "\t" in debut else ",")
-    rows = list(csv.reader(io.StringIO(texte), delimiter=sep))
+    return _lignes_releve(list(csv.reader(io.StringIO(texte), delimiter=sep)))
+
+
+def lire_releve_excel(contenu: bytes) -> pd.DataFrame:
+    """Lit un relevé Excel : la première feuille qui contient un en-tête Date + Libellé + Débit/Crédit."""
+    from openpyxl import load_workbook
+    wb = load_workbook(io.BytesIO(contenu), data_only=True, read_only=True)
+    for ws in wb.worksheets:
+        if ws.sheet_state != "visible":
+            continue
+        rows = [["" if v is None else v for v in r] for r in ws.iter_rows(values_only=True)]
+        try:
+            return _lignes_releve(rows)
+        except ValueError:
+            continue
+    raise ValueError("Aucune feuille du fichier ne contient d'en-tête Date, Libellé, Débit/Crédit.")
+
+
+def _lignes_releve(rows: list[list]) -> pd.DataFrame:
     h = None
-    for k, r in enumerate(rows[:25]):
+    for k, r in enumerate(rows[:40]):
         c = [sans_accent(x).strip() for x in r]
         i_date = next((j for j, x in enumerate(c) if x.startswith("date") and "valeur" not in x), None)
         i_deb = next((j for j, x in enumerate(c) if "debit" in x), None)
@@ -447,10 +474,17 @@ def lire_releve_csv(contenu: bytes) -> pd.DataFrame:
             break
     if h is None:
         raise ValueError("Format non reconnu : il faut une ligne d'en-tête avec Date, Libellé et Débit/Crédit "
-                         "(ou Montant). Exportez le relevé en CSV depuis votre banque en ligne.")
-    lignes = []
+                         "(ou Montant). Exportez le relevé en CSV ou en Excel depuis votre banque en ligne.")
+    lignes, solde_fin = [], None
     for r in rows[h + 1:]:
-        r = r + [""] * 10
+        r = list(r) + [""] * 10
+        texte_ligne = " ".join(str(x) for x in r if x not in ("", None))
+        m_solde = re.search(r"solde au (\d{1,2}/\d{1,2}/\d{4})", sans_accent(texte_ligne))
+        if m_solde:
+            valeurs = [x for x in r if isinstance(x, (int, float)) and not isinstance(x, bool)]
+            if valeurs:
+                solde_fin = (lire_date(m_solde.group(1)), round(float(valeurs[-1]), 2))
+            continue
         d = lire_date(r[i_date])
         if not d:
             continue
@@ -466,9 +500,11 @@ def lire_releve_csv(contenu: bytes) -> pd.DataFrame:
                 m = -abs(db)
         if not m:
             continue
-        lignes.append({"date": d, "libelle": re.sub(r"\s+", " ", r[i_lib]).strip() if i_lib is not None else "",
+        lignes.append({"date": d, "libelle": re.sub(r"\s+", " ", str(r[i_lib])).strip() if i_lib is not None else "",
                        "montant": round(m, 2)})
-    return pd.DataFrame(lignes)
+    df = pd.DataFrame(lignes, columns=["date", "libelle", "montant"])
+    df.attrs["solde_fin"] = solde_fin
+    return df
 
 
 _MOTS_VIDES = {"prlv", "prelevement", "vir", "virement", "sepa", "carte", "chq", "cheque", "remise", "des", "les",
@@ -507,8 +543,9 @@ def analyser_releve(releve: pd.DataFrame, ops: pd.DataFrame, categories_dispo: l
         trouve = meilleur or deja
         if trouve is not None:
             pris.add(trouve.id)
-        cat = next((habitudes[w] for w in mots_cles(b["libelle"]) if w in habitudes), "")
         sens = "Recette" if b["montant"] > 0 else "Dépense"
+        cat = categorie_par_regle(b["libelle"], sens, categories_dispo) or \
+            next((habitudes[w] for w in mots_cles(b["libelle"]) if w in habitudes), "")
         if not cat or cat not in categories_dispo or (cat in categories_dispo and _sens_categorie(cat) != sens):
             cat = next((c for c in categories_dispo if c.startswith("627 ")), "") if (
                 sens == "Dépense" and re.search(r"frais|commission|cotis.*carte|tenue|abonnement", sans_accent(b["libelle"]))
@@ -521,6 +558,29 @@ def analyser_releve(releve: pd.DataFrame, ops: pd.DataFrame, categories_dispo: l
                        "ecriture": f"{trouve.date:%d/%m/%Y} · {trouve.libelle}" if trouve is not None else "",
                        "categorie": cat})
     return pd.DataFrame(lignes)
+
+
+# Libellés habituels des relevés (Crédit Mutuel) -> code de catégorie, selon le sens
+REGLES_BANQUE = [
+    (r"soutien asso|retrocession|remb.*frais", "Recette", "7581"),
+    (r"fact sgt|frais|commission|cotis.*carte|tenue de compte|abonnement|agios", "Dépense", "627"),
+    (r"federation francaise|ffk|ffkda|licence", "Dépense", "6281"),
+    (r"ligue|comite departemental|cdk|affiliation", "Dépense", "6282"),
+    (r"maif|macif|assurance|allianz|axa", "Dépense", "616"),
+    (r"rem chq|remise ch|licence|cotis|adhesion|inscription|pass.?sport", "Recette", "756"),
+    (r"subvention|mairie|commune|departement|region|ans ", "Recette", "74"),
+    (r"don ", "Recette", "754"),
+]
+
+
+def categorie_par_regle(libelle: str, sens: str, categories_dispo: list[str]) -> str:
+    t = sans_accent(libelle) + " "
+    for motif, s, code in REGLES_BANQUE:
+        if s == sens and re.search(motif, t):
+            cat = next((c for c in categories_dispo if code_categorie(c) == code), "")
+            if cat:
+                return cat
+    return ""
 
 
 def _sens_categorie(libelle: str) -> str:

@@ -13,7 +13,7 @@ from commun import (backend, categories, charger, est_admin, eur, flash, journal
 
 def page_banque():
     st.header("Banque")
-    onglets = st.tabs(["✅ Pointage relevé par relevé", "📥 Importer un relevé CSV", "🗂️ Relevés validés"])
+    onglets = st.tabs(["✅ Pointage relevé par relevé", "📥 Importer un relevé (CSV / Excel)", "🗂️ Relevés validés"])
     with onglets[0]:
         _pointage()
     with onglets[1]:
@@ -23,12 +23,12 @@ def page_banque():
 
 
 def _import_releve():
-    st.caption("Relevé **CSV** : chaque ligne est comparée à la comptabilité (même montant, date à ±10 jours). "
+    st.caption("Relevé **CSV ou Excel** (export « Télécharger les opérations » du Crédit Mutuel) : chaque ligne est comparée à la comptabilité (même montant, date à ±10 jours). "
                "Relevé **PDF** : simplement archivé dans le Drive. Dans l'espace en ligne de la banque, choisissez "
                "« Télécharger les opérations » au format CSV.")
     if lecture_seule():
         return
-    fichier = st.file_uploader("Relevé bancaire", type=["csv", "pdf"], key="releve")
+    fichier = st.file_uploader("Relevé bancaire", type=["csv", "xlsx", "xls", "pdf"], key="releve")
     if not fichier:
         return
     if fichier.name.lower().endswith(".pdf"):
@@ -39,13 +39,17 @@ def _import_releve():
             st.success(f"Relevé archivé : {lieu}")
         return
     try:
-        releve = metier.lire_releve_csv(fichier.getvalue())
+        releve = metier.lire_releve(fichier.getvalue(), fichier.name)
     except ValueError as e:
         st.error(str(e))
         return
     if releve.empty:
         st.warning("Aucune opération lue dans ce fichier.")
         return
+    solde_fin = releve.attrs.get("solde_fin")
+    st.caption(f"{len(releve)} opération(s) du {releve['date'].min():%d/%m/%Y} au {releve['date'].max():%d/%m/%Y}"
+               + (f" · solde indiqué par la banque : **{eur(solde_fin[1])}** au {solde_fin[0]:%d/%m/%Y} "
+                  "(il sera proposé dans l'onglet Pointage)" if solde_fin else ""))
     ops = operations()
     cats = categories()
     apercu = metier.analyser_releve(releve, ops, cats)
@@ -94,11 +98,14 @@ def _import_releve():
     if nouvelles:
         backend().ajouter("operations", nouvelles)
     lieu = ranger_fichier("Relevés bancaires", f"{date.today():%Y-%m-%d}_{fichier.name}", fichier.getvalue(),
-                          "text/csv")
+                          fichier.type or "application/octet-stream")
     journaliser("banque", f"relevé {fichier.name} : {n_rap} rapprochée(s), {len(nouvelles)} ajoutée(s)")
+    if solde_fin:
+        st.session_state["releve_prefill"] = solde_fin
     rafraichir()
     flash(f"Relevé traité : {n_rap} écriture(s) rapprochée(s), {len(nouvelles)} ajoutée(s)."
-          + (" Relevé archivé dans le Drive." if lieu else ""))
+          + (" Relevé archivé dans le Drive." if lieu else "")
+          + (" Terminez dans l'onglet « Pointage » : la date et le solde du relevé y sont déjà remplis." if solde_fin else ""))
     st.rerun()
 
 
@@ -109,6 +116,8 @@ def _pointage():
     Il doit être égal au solde imprimé sur le relevé. Une fois validé, le relevé verrouille ses écritures."""
     releves = charger("releves")
     d0, s0 = metier.dernier_releve_valide(releves)
+    if "releve_prefill" in st.session_state:          # date et solde lus dans le dernier relevé importé
+        st.session_state["pointage_date"], st.session_state["pointage_solde"] = st.session_state.pop("releve_prefill")
     ops = operations()
     st.markdown(
         "**Méthode** : prenez les relevés dans l'ordre chronologique. Pour chacun : date et solde de fin du relevé "

@@ -155,3 +155,22 @@ def test_releve_valide_verrouille_les_ecritures_pointees():
                                   "", "", "t", 9, rapproche=True)]))
     assert metier.verrouillees(ops, date(2025, 8, 31)).tolist() == [True, False, False]
     assert not metier.verrouillees(ops, None).any()
+
+
+def test_releve_excel_format_credit_mutuel(tmp_path):
+    from datetime import datetime as dt
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["Situation de votre compte au 31/10/2026"])
+    ws.append([None, None, None, "Solde initial : ", None, None, "EUR"])
+    ws.append(["Date", "Valeur", "Libellé", "Débit", "Crédit", "Solde", "Dev"])
+    ws.append([dt(2026, 9, 3), dt(2026, 8, 1), "SOUTIEN ASSO", None, 4.05, None, "EUR"])
+    ws.append([dt(2026, 9, 10), dt(2026, 9, 10), "FACT FRAIS", -4.05, None, None, "EUR"])
+    ws.append([dt(2026, 10, 10), dt(2026, 10, 12), "REM CHQ N1", None, 79, None, "EUR"])
+    ws.append([None, None, None, "Solde au 31/10/2026 : ", "Solde au 31/10/2026 : ", 100.5, "EUR"])
+    f = tmp_path / "releve.xlsx"
+    wb.save(f)
+    r = metier.lire_releve(f.read_bytes(), "releve.xlsx")
+    assert r["montant"].tolist() == [4.05, -4.05, 79.0]
+    assert r.attrs["solde_fin"] == (date(2026, 10, 31), 100.5)
