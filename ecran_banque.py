@@ -142,9 +142,11 @@ def _pointage():
         st.error("Ce relevé est antérieur ou égal au dernier relevé validé.")
         return
 
-    banque = ops[(ops["source"] != "Espèces") & (ops["date"] <= pd.Timestamp(jour))]
-    deja = float(banque.loc[banque["rapproche_b"], "signe"].sum())
-    candidats = banque[~banque["rapproche_b"]].sort_values("date")
+    banque = ops[ops["source"] != "Espèces"]
+    deja = float(banque.loc[banque["rapproche_b"] & (banque["releve_d"] <= pd.Timestamp(jour)), "signe"].sum())
+    # Écritures non pointées datées jusqu'à la fin du relevé (+ 5 jours : chèque saisi après son encaissement)
+    candidats = banque[~banque["rapproche_b"] & (banque["date"] <= pd.Timestamp(jour) + pd.Timedelta(days=5))]
+    candidats = candidats.sort_values("date")
     vue = candidats[["id", "date", "libelle", "tiers", "signe"]].assign(pointer=False)
     edite = st.data_editor(
         vue[["pointer", "id", "date", "libelle", "tiers", "signe"]], hide_index=True, width="stretch",
@@ -180,20 +182,21 @@ def _pointage():
                 else:
                     backend().ajouter("operations", [metier.nouvelle_operation(
                         d, sens, cat, libelle, montant, "Banque", "", tiers, "", f"Saisie au pointage du relevé du "
-                        f"{jour:%d/%m/%Y}", utilisateur(), mois_debut(), rapproche=True, origine="pointage")])
+                        f"{jour:%d/%m/%Y}", utilisateur(), mois_debut(), rapproche=True, origine="pointage",
+                        releve=jour)])
                     journaliser("pointage", f"écriture ajoutée : {libelle} {montant} €")
                     rafraichir()
                     st.rerun()
 
     b1, b2 = st.columns(2)
     if b1.button(f"Enregistrer le pointage ({len(coches)} écriture(s))", disabled=coches.empty):
-        _pointer(coches["id"].tolist())
+        _pointer(coches["id"].tolist(), jour)
         flash(f"{len(coches)} écriture(s) pointée(s). Écart restant : {eur(ecart)}.")
         st.rerun()
     if b2.button("Valider le relevé", type="primary", disabled=abs(ecart) >= 0.005,
                  help="Possible seulement quand l'écart est nul."):
         if not coches.empty:
-            _pointer(coches["id"].tolist())
+            _pointer(coches["id"].tolist(), jour)
         lien = ranger_fichier("Relevés bancaires", f"releve_{jour:%Y-%m-%d}.pdf", pdf.getvalue(),
                               "application/pdf") if pdf else ""
         backend().ajouter("releves", [{"id": metier.nouvel_id(), "date_releve": jour.isoformat(),
@@ -206,9 +209,12 @@ def _pointage():
         st.rerun()
 
 
-def _pointer(ids: list[str]) -> None:
+def _pointer(ids: list[str], jour) -> None:
     brut = charger("operations").copy()
+    if "releve" not in brut:
+        brut["releve"] = ""
     brut.loc[brut["id"].isin(ids), "rapproche"] = "oui"
+    brut.loc[brut["id"].isin(ids), "releve"] = jour.isoformat()
     backend().remplacer("operations", brut)
     journaliser("pointage", f"{len(ids)} écriture(s) pointée(s)")
     rafraichir()

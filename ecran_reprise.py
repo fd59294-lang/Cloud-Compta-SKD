@@ -54,7 +54,7 @@ def _apercu_et_import(ops: pd.DataFrame, fichier, cle: str, attente: pd.DataFram
     existantes = operations()
     non_pointees = {metier.empreinte(r.date, r.montant, r.sens, r.libelle): r.id
                     for r in existantes.itertuples() if pd.notna(r.date) and not r.rapproche_b}
-    a_pointer = [non_pointees[metier.empreinte(r["date"], r["montant"], r["sens"], r["libelle"])]
+    a_pointer = {non_pointees[metier.empreinte(r["date"], r["montant"], r["sens"], r["libelle"])]: r.get("releve", "")
                  for r in ops.to_dict("records")
                  if r["statut"] == "Doublon" and r["rapproche"] == "oui"
                  and metier.empreinte(r["date"], r["montant"], r["sens"], r["libelle"]) in non_pointees]
@@ -91,7 +91,10 @@ def _apercu_et_import(ops: pd.DataFrame, fichier, cle: str, attente: pd.DataFram
         return False
     if a_pointer:
         brut = charger("operations").copy()
-        brut.loc[brut["id"].isin(a_pointer), "rapproche"] = "oui"
+        if "releve" not in brut:
+            brut["releve"] = ""
+        for i, rel in a_pointer.items():
+            brut.loc[brut["id"] == i, ["rapproche", "releve"]] = ["oui", rel or ""]
         backend().remplacer("operations", brut)
     if not a_importer.empty:
         backend().ajouter("operations", a_importer.drop(columns=["statut"]).to_dict("records"))

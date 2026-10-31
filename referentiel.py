@@ -71,7 +71,8 @@ FRAIS_ADHESION_DEFAUT = 0.0
 # ------------------------------------------------------------------ tables (un onglet chacune)
 TABLES = {
     "operations": ["id", "date", "exercice", "sens", "categorie", "libelle", "montant", "source", "mode_paiement",
-                   "tiers", "piece", "notes", "rapproche", "justificatif", "origine", "saisi_par", "saisi_le"],
+                   "tiers", "piece", "notes", "rapproche", "justificatif", "origine", "saisi_par", "saisi_le",
+                   "releve"],
     "attente": ["id", "date", "sens", "categorie", "libelle", "montant", "source", "mode_paiement", "tiers", "notes",
                 "cree_par", "cree_le"],
     "categories": ["code", "nom", "sens", "actif"],
@@ -128,4 +129,4 @@ DOSSIERS_DRIVE = ["Sauvegardes", "Factures et reçus", "Reçus fiscaux", "Rappor
 
 # Modèle d'import Excel générique
 COLONNES_IMPORT = ["Date", "Sens", "Catégorie", "Libellé", "Montant", "Source", "Mode de paiement", "Tiers",
-                   "N° pièce", "Notes", "Rapproché"]
+                   "N° pièce", "Notes", "Rapproché", "Relevé du"]

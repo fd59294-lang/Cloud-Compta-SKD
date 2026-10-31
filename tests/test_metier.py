@@ -174,3 +174,18 @@ def test_releve_excel_format_credit_mutuel(tmp_path):
     r = metier.lire_releve(f.read_bytes(), "releve.xlsx")
     assert r["montant"].tolist() == [4.05, -4.05, 79.0]
     assert r.attrs["solde_fin"] == (date(2026, 10, 31), 100.5)
+
+
+def test_pointage_sur_releve_posterieur():
+    """Écriture datée de septembre mais encaissée sur le relevé d'octobre : elle compte en octobre."""
+    from datetime import date
+    ops = pd.DataFrame([
+        metier.nouvelle_operation(date(2024, 9, 11), "Recette", "756", "Licence", 37, "Banque", "Virement", "", "",
+                                  "", "test", rapproche=True, releve=date(2024, 10, 31)),
+        metier.nouvelle_operation(date(2024, 9, 20), "Dépense", "627", "Frais", 3, "Banque", "", "", "", "",
+                                  "test", rapproche=True, releve=date(2024, 9, 30)),
+    ])
+    t = metier.typer_operations(ops)
+    assert metier.soldes(t, jusqu_au=date(2024, 9, 30))["pointe"] == -3
+    assert metier.soldes(t, jusqu_au=date(2024, 10, 31))["pointe"] == 34
+    assert metier.verrouillees(t, date(2024, 9, 30)).sum() == 1

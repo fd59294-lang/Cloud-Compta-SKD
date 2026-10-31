@@ -118,12 +118,18 @@ def typer_operations(df: pd.DataFrame) -> pd.DataFrame:
     df["exercice"] = nombres(df["exercice"]).fillna(0).astype(int)
     df["signe"] = df["montant"].where(df["sens"] == "Recette", -df["montant"])
     df["rapproche_b"] = df["rapproche"].map(oui)
+    if "releve" not in df:
+        df["releve"] = ""
+    # Date du relevé sur lequel l'écriture est pointée (à défaut : sa propre date)
+    df["releve_d"] = pd.to_datetime(df["releve"].where(df["releve"].astype(str).str.strip() != "", None),
+                                    errors="coerce").fillna(df["date"])
     return df
 
 
 def nouvelle_operation(d: date, sens: str, categorie: str, libelle: str, montant: float, source: str,
                        mode: str, tiers: str, piece: str, notes: str, utilisateur: str, mois_debut: int = 9,
-                       rapproche: bool = False, origine: str = "", justificatif: str = "") -> dict:
+                       rapproche: bool = False, origine: str = "", justificatif: str = "",
+                       releve: date | None = None) -> dict:
     if sens not in SENS:
         raise ValueError("Sens inconnu")
     return {
@@ -133,19 +139,22 @@ def nouvelle_operation(d: date, sens: str, categorie: str, libelle: str, montant
         "tiers": str(tiers or "").strip(), "piece": str(piece or "").strip(), "notes": str(notes or "").strip(),
         "rapproche": "oui" if rapproche else "non", "justificatif": justificatif, "origine": origine,
         "saisi_par": utilisateur, "saisi_le": maintenant(),
+        "releve": releve.isoformat() if (rapproche and releve) else "",
     }
 
 
 def soldes(ops: pd.DataFrame, jusqu_au: date | None = None, avant: date | None = None) -> dict:
     """Soldes banque et caisse (toutes écritures jusqu'à une date incluse, ou strictement avant une date)."""
-    x = ops
+    x, p = ops, ops
     if jusqu_au is not None:
         x = x[x["date"] <= pd.Timestamp(jusqu_au)]
+        p = p[p["releve_d"] <= pd.Timestamp(jusqu_au)]
     if avant is not None:
         x = x[x["date"] < pd.Timestamp(avant)]
+        p = p[p["releve_d"] < pd.Timestamp(avant)]
     banque = x.loc[x["source"] != "Espèces", "signe"].sum()
     caisse = x.loc[x["source"] == "Espèces", "signe"].sum()
-    pointe = x.loc[(x["source"] != "Espèces") & x["rapproche_b"], "signe"].sum()
+    pointe = p.loc[(p["source"] != "Espèces") & p["rapproche_b"], "signe"].sum()
     return {"banque": round(float(banque), 2), "caisse": round(float(caisse), 2), "pointe": round(float(pointe), 2)}
 
 
@@ -352,15 +361,16 @@ def convertir_operations_apps_script(df: pd.DataFrame, df_categories: pd.DataFra
 # ------------------------------------------------------------------ import générique (modèle Excel)
 def modele_import_excel() -> bytes:
     exemple = pd.DataFrame([
-        ["15/09/2026", "Recette", "756", "Cotisation DUPONT Léo", 129.00, "Banque", "Chèque", "DUPONT", "REC-2026-001", "", "non"],
+        ["15/09/2026", "Recette", "756", "Cotisation DUPONT Léo", 129.00, "Banque", "Chèque", "DUPONT", "REC-2026-001", "",
+         "non", ""],
         ["09/10/2026", "Dépense", "Frais bancaires", "Frais de tenue de compte", 3.88, "Banque", "Prélèvement",
-         "Crédit Mutuel", "", "", "oui"],
+         "Crédit Mutuel", "", "", "oui", "31/10/2026"],
         ["03/02/2027", "Recette", "Subventions", "Subvention mairie", 500, "Banque", "Virement", "Mairie de Haussy",
-         "", "", "non"],
+         "", "", "non", ""],
     ], columns=COLONNES_IMPORT)
     aide = pd.DataFrame({
         "Colonne": COLONNES_IMPORT,
-        "Obligatoire": ["Oui", "Oui*", "Non", "Oui", "Oui", "Non", "Non", "Non", "Non", "Non", "Non"],
+        "Obligatoire": ["Oui", "Oui*", "Non", "Oui", "Oui", "Non", "Non", "Non", "Non", "Non", "Non", "Non"],
         "Ce qu'il faut mettre": [
             "Date de l'opération (JJ/MM/AAAA)",
             "Recette ou Dépense (*facultatif si le montant est négatif pour une dépense)",
@@ -373,6 +383,7 @@ def modele_import_excel() -> bytes:
             "Numéro de facture, de ticket ou de reçu",
             "Informations complémentaires",
             "oui si l'opération figure déjà sur un relevé bancaire",
+            "Date de fin du relevé sur lequel elle figure (facultatif)",
         ],
     })
     buf = io.BytesIO()
@@ -416,7 +427,8 @@ def convertir_modele(contenu: bytes, df_categories: pd.DataFrame, utilisateur: s
                                 "Espèces" if sans_accent(v(r, "Source")).startswith("espece") else "Banque",
                                 mode if mode in MODES_PAIEMENT else "", str(v(r, "Tiers")), str(v(r, "N° pièce")),
                                 str(v(r, "Notes")), f"import ({utilisateur})", mois_debut,
-                                rapproche=oui(v(r, "Rapproché")), origine="import Excel")
+                                rapproche=oui(v(r, "Rapproché")), origine="import Excel",
+                                releve=lire_date(v(r, "Relevé du")))
         op["statut"] = ("Doublon" if empreinte(d, abs(m), sens, libelle) in existantes
                         else ("OK" if reconnu else "À classer"))
         lignes.append(op)
@@ -567,7 +579,7 @@ REGLES_BANQUE = [
     (r"federation francaise|ffk|ffkda|licence", "Dépense", "6281"),
     (r"ligue|comite departemental|cdk|affiliation", "Dépense", "6282"),
     (r"maif|macif|assurance|allianz|axa", "Dépense", "616"),
-    (r"rem chq|remise ch|licence|cotis|adhesion|inscription|pass.?sport", "Recette", "756"),
+    (r"rem chq|remise ch|licence|cotis|adhesion|inscription|pass.?sport|pass psp|asp agence|drfip", "Recette", "756"),
     (r"subvention|mairie|commune|departement|region|ans ", "Recette", "74"),
     (r"don ", "Recette", "754"),
 ]
@@ -609,7 +621,7 @@ def verrouillees(ops: pd.DataFrame, date_verrou: date | None) -> pd.Series:
     """Écritures bancaires pointées sur un relevé déjà validé : elles ne se modifient plus."""
     if date_verrou is None or ops.empty:
         return pd.Series(False, index=ops.index)
-    return (ops["source"] != "Espèces") & ops["rapproche_b"] & (ops["date"] <= pd.Timestamp(date_verrou))
+    return (ops["source"] != "Espèces") & ops["rapproche_b"] & (ops["releve_d"] <= pd.Timestamp(date_verrou))
 
 
 # ------------------------------------------------------------------ opérations en attente
@@ -707,13 +719,14 @@ def export_excel(tables: dict[str, pd.DataFrame], mois_debut: int = 9) -> bytes:
     ops = typer_operations(tables["operations"])
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as w:
-        vue = ops.sort_values("date").drop(columns=["signe", "rapproche_b"])
+        vue = ops.sort_values("date").drop(columns=["signe", "rapproche_b", "releve_d"])
         vue["date"] = vue["date"].dt.date
         vue.rename(columns={"id": "Identifiant", "date": "Date", "exercice": "Exercice", "sens": "Sens",
                             "categorie": "Catégorie", "libelle": "Libellé", "montant": "Montant", "source": "Source",
                             "mode_paiement": "Mode de paiement", "tiers": "Tiers", "piece": "N° pièce",
                             "notes": "Notes", "rapproche": "Rapproché", "justificatif": "Justificatif",
-                            "origine": "Origine", "saisi_par": "Saisi par", "saisi_le": "Saisi le"}
+                            "origine": "Origine", "saisi_par": "Saisi par", "saisi_le": "Saisi le",
+                            "releve": "Pointée sur le relevé du"}
                    ).to_excel(w, sheet_name="Opérations", index=False)
         for ex in sorted(ops["exercice"].unique()):
             if ex:

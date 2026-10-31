@@ -154,12 +154,14 @@ def page_operations():
         brut = charger("operations").copy()
         for r in modif.itertuples():
             brut.loc[brut["id"] == r.id, "rapproche"] = "oui" if r.rapproche_b else "non"
+            if not r.rapproche_b and "releve" in brut:
+                brut.loc[brut["id"] == r.id, "releve"] = ""
         backend().remplacer("operations", brut)
         journaliser("rapprochement", f"{len(modif)} écriture(s) modifiée(s)")
         rafraichir()
         flash("Rapprochements enregistrés.")
         st.rerun()
-    export = v.drop(columns=["signe", "rapproche_b"]).copy()
+    export = v.drop(columns=["signe", "rapproche_b", "releve_d"], errors="ignore").copy()
     export["date"] = export["date"].dt.date
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as w:
