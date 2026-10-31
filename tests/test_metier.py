@@ -224,3 +224,15 @@ def test_page_installation_affiche_le_bouton():
     at.query_params["state"] = "faux"
     at.run(timeout=30)
     assert any("expiré ou invalide" in e.value for e in at.error)
+
+
+def test_tous_les_fichiers_se_chargent():
+    """Chaque module de l'application doit se compiler et s'importer (erreur de syntaxe = appli en panne)."""
+    import importlib
+    import py_compile
+    racine = Path(__file__).resolve().parent.parent
+    for f in list(racine.glob("*.py")) + list(racine.glob("outils/*.py")):
+        py_compile.compile(str(f), doraise=True)
+    for m in ["commun", "stockage", "installation", "ecran_adherents", "ecran_banque", "ecran_budget", "ecran_compta",
+              "ecran_documents", "ecran_dons", "ecran_rapports", "ecran_reprise"]:
+        importlib.import_module(m)

@@ -57,7 +57,7 @@ def _apercu_et_import(ops: pd.DataFrame, fichier, cle: str, attente: pd.DataFram
     a_pointer = {non_pointees[metier.empreinte(r["date"], r["montant"], r["sens"], r["libelle"])]: r.get("releve", "")
                  for r in ops.to_dict("records")
                  if r["statut"] == "Doublon" and r["rapproche"] == "oui"
-                 and metier.empreinte(r["date"], r["montant"], r["sens"], r["libelle"]) in non_pointees]
+                 and metier.empreinte(r["date"], r["montant"], r["sens"], r["libelle"]) in non_pointees}
     compte = ops["statut"].value_counts()
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Nouvelles", int(compte.get("OK", 0)))
