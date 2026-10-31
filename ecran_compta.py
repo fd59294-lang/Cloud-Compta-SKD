@@ -65,6 +65,11 @@ def formulaire_operation(cle: str, defaut: dict | None = None) -> dict | None:
     if montant <= 0 or not libelle.strip():
         st.error("Le montant et le libellé sont obligatoires.")
         return None
+    d0, _ = metier.dernier_releve_valide(charger("releves"))
+    if d0 and source == "Banque" and rapproche and jour <= d0:
+        st.error(f"Le relevé du {d0:%d/%m/%Y} est validé : une écriture bancaire pointée ne peut plus être ajoutée ou "
+                 "modifiée avant cette date (annulez d'abord la validation dans Banque → Relevés validés).")
+        return None
     lien = d.get("justificatif", "")
     if justificatif is not None:
         lien = ranger_justificatif(justificatif, jour, libelle) or lien
@@ -138,6 +143,13 @@ def page_operations():
                        "justificatif": st.column_config.LinkColumn("Justificatif", display_text="📎 ouvrir")})
     c1, c2 = st.columns([1, 3])
     modif = edite[edite["rapproche_b"] != vue["rapproche_b"]]
+    d0, _ = metier.dernier_releve_valide(charger("releves"))
+    if d0 and not modif.empty:
+        periode_validee = (modif["date"] <= pd.Timestamp(d0)) & (modif["source"] != "Espèces")
+        if periode_validee.any():
+            st.warning(f"{int(periode_validee.sum())} changement(s) de pointage concernent la période du relevé validé "
+                       f"du {d0:%d/%m/%Y} : ils ne seront pas enregistrés.")
+            modif = modif[~periode_validee]
     if peut_saisir() and c1.button(f"Enregistrer les rapprochements ({len(modif)})", disabled=modif.empty):
         brut = charger("operations").copy()
         for r in modif.itertuples():
@@ -166,6 +178,11 @@ def page_operations():
     if str(ligne["origine"]).startswith(("paiement:", "don:")):
         st.info("Cette écriture vient d'un paiement d'adhérent ou d'un don : corrigez de préférence depuis la page "
                 "concernée pour garder le reçu cohérent.")
+    d0, _ = metier.dernier_releve_valide(charger("releves"))
+    if bool(metier.verrouillees(v[v["id"] == choix], d0).any()):
+        st.warning(f"Écriture pointée sur un relevé validé (jusqu'au {d0:%d/%m/%Y}) : elle est verrouillée. Pour la "
+                   "corriger, annulez d'abord la validation du relevé (Banque → Relevés validés).")
+        return
     defaut = {**ligne.to_dict(), "date": ligne["date"].date() if pd.notna(ligne["date"]) else date.today()}
     corrigee = formulaire_operation(f"edition_{choix}", defaut)
     if corrigee:

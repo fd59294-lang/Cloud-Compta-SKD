@@ -22,7 +22,7 @@ dans le programme Python.
 | Import du relevé CSV, rapprochement automatique (montant ± 10 jours) | Apps Script | Banque → import |
 | Catégorie devinée d'après les habitudes | Apps Script | Banque → import |
 | Archivage des relevés (CSV et PDF) | Apps Script | Banque → archive Drive |
-| Rapprochement : solde du relevé / solde pointé / écart | Excel (feuille Rappr) | Banque → contrôle du relevé |
+| Rapprochement : solde du relevé / solde pointé / écart | Excel (feuille Rappr) | Banque → pointage relevé par relevé, validation à écart nul, verrouillage (voir POINTAGE.md) |
 
 ## Adhérents
 | Numéro de licence FFKaraté unique, réinscription sans ressaisie | Apps Script | Adhérents |

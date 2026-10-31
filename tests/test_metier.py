@@ -138,3 +138,20 @@ def test_reprise_version_apps_script():
 def test_categorie_inconnue_a_classer():
     cat, reconnu = metier.trouver_categorie("Buvette du gala", "Recette")
     assert not reconnu and cat.startswith("R99")
+
+
+def test_releve_valide_verrouille_les_ecritures_pointees():
+    rel = pd.DataFrame([{"id": "r1", "date_releve": "2025-08-31", "solde_releve": 361.81, "solde_pointe": 361.81,
+                         "ecart": 0, "fichier": "", "cree_par": "", "cree_le": "", "valide": "oui"},
+                        {"id": "r2", "date_releve": "2025-09-30", "solde_releve": 300, "solde_pointe": 300,
+                         "ecart": 0, "fichier": "", "cree_par": "", "cree_le": "", "valide": "annulé"}])
+    assert metier.dernier_releve_valide(rel) == (date(2025, 8, 31), 361.81)
+    ops = metier.typer_operations(pd.DataFrame([
+        metier.nouvelle_operation(date(2025, 8, 9), "Dépense", "627 — Frais bancaires", "a", 3.97, "Banque", "", "",
+                                  "", "", "t", 9, rapproche=True),
+        metier.nouvelle_operation(date(2025, 8, 20), "Dépense", "606 — Achat", "chèque non débité", 40, "Banque", "",
+                                  "", "", "", "t", 9),
+        metier.nouvelle_operation(date(2025, 9, 9), "Dépense", "627 — Frais bancaires", "b", 3.97, "Banque", "", "",
+                                  "", "", "t", 9, rapproche=True)]))
+    assert metier.verrouillees(ops, date(2025, 8, 31)).tolist() == [True, False, False]
+    assert not metier.verrouillees(ops, None).any()

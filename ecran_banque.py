@@ -1,4 +1,4 @@
-"""Banque : import des relevés (CSV) avec rapprochement automatique, contrôle du relevé, archives."""
+"""Banque : pointage relevé par relevé (validation à écart nul, verrouillage), import des relevés CSV."""
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -7,23 +7,19 @@ import pandas as pd
 import streamlit as st
 
 import metier
-from commun import (backend, categories, charger, eur, flash, journaliser, lecture_seule, mois_debut, operations,
-                    rafraichir, ranger_fichier, utilisateur)
+from commun import (backend, categories, charger, est_admin, eur, flash, journaliser, lecture_seule, mois_debut,
+                    operations, rafraichir, ranger_fichier, utilisateur)
 
 
 def page_banque():
     st.header("Banque")
-    onglets = st.tabs(["📥 Importer un relevé", "⚖️ Contrôle du relevé", "🗂️ Relevés contrôlés"])
+    onglets = st.tabs(["✅ Pointage relevé par relevé", "📥 Importer un relevé CSV", "🗂️ Relevés validés"])
     with onglets[0]:
-        _import_releve()
+        _pointage()
     with onglets[1]:
-        _controle()
+        _import_releve()
     with onglets[2]:
-        r = charger("releves")
-        if r.empty:
-            st.info("Aucun contrôle enregistré.")
-        else:
-            st.dataframe(r.iloc[::-1].drop(columns=["id"]), hide_index=True, width="stretch")
+        _releves_valides()
 
 
 def _import_releve():
@@ -69,6 +65,14 @@ def _import_releve():
                        "resultat": "Résultat", "operation_id": None, "ecriture": "Écriture correspondante",
                        "categorie": st.column_config.SelectboxColumn("Catégorie (nouvelles)", options=cats)})
     a_traiter = edite[edite["importer"] & (edite["resultat"] != "Déjà rapprochée")]
+    d0, _ = metier.dernier_releve_valide(charger("releves"))
+    if d0:
+        anciennes = a_traiter[(a_traiter["resultat"] == "Nouvelle") & (a_traiter["date"].map(metier.lire_date) <= d0)]
+        if not anciennes.empty:
+            st.warning(f"{len(anciennes)} ligne(s) datée(s) avant le dernier relevé validé ({d0:%d/%m/%Y}) ne sont "
+                       "pas dans la comptabilité : elles sont ignorées. Si elles sont réelles, annulez la validation "
+                       "de ce relevé (onglet « Relevés validés ») avant de les reprendre.")
+            a_traiter = a_traiter.drop(anciennes.index)
     if not st.button(f"Valider ({len(a_traiter)} ligne(s))", type="primary", disabled=a_traiter.empty):
         return
     brut = charger("operations").copy()
@@ -98,36 +102,132 @@ def _import_releve():
     st.rerun()
 
 
-def _controle():
-    st.caption("Comme la feuille « Rappr » de l'Excel : on compare le solde indiqué sur le relevé au solde des "
-               "écritures cochées « rapprochées ». Un écart signale un oubli ou une erreur de saisie.")
+def _pointage():
+    """Rapprochement bancaire rigoureux : un relevé à la fois, validé seulement quand l'écart est nul.
+
+    Solde pointé = somme des écritures bancaires cochées « rapprochées » jusqu'à la date du relevé.
+    Il doit être égal au solde imprimé sur le relevé. Une fois validé, le relevé verrouille ses écritures."""
+    releves = charger("releves")
+    d0, s0 = metier.dernier_releve_valide(releves)
     ops = operations()
-    c1, c2 = st.columns(2)
-    jour = c1.date_input("Date du relevé", value=date.today(), format="DD/MM/YYYY", key="date_releve")
-    solde_releve = c2.number_input("Solde indiqué sur le relevé (€)", step=0.01, format="%.2f", key="solde_releve")
-    s = metier.soldes(ops, jusqu_au=jour)
-    ecart = round(solde_releve - s["pointe"], 2)
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Solde pointé à cette date", eur(s["pointe"]))
-    m2.metric("Solde comptable (tout compris)", eur(s["banque"]))
-    m3.metric("Écart relevé − pointé", eur(ecart), delta="OK" if abs(ecart) < 0.005 else None)
-    if abs(ecart) < 0.005:
-        st.success("Le relevé et les écritures rapprochées concordent.")
+    st.markdown(
+        "**Méthode** : prenez les relevés dans l'ordre chronologique. Pour chacun : date et solde de fin du relevé "
+        "→ cochez les écritures qui y figurent → saisissez celles qui manquent → validez quand l'écart est à **0,00 €**.")
+    if d0:
+        st.info(f"Dernier relevé validé : **{d0:%d/%m/%Y}**, solde **{eur(s0)}**. Les écritures pointées jusqu'à "
+                "cette date sont verrouillées.")
     else:
-        st.warning("Écart à expliquer. Écritures bancaires non rapprochées jusqu'à cette date :")
-    non_rap = ops[(ops["source"] != "Espèces") & ~ops["rapproche_b"] & (ops["date"] <= pd.Timestamp(jour))]
-    if not non_rap.empty:
-        st.dataframe(non_rap.sort_values("date")[["date", "libelle", "signe", "tiers"]], hide_index=True,
-                     width="stretch", column_config={"date": st.column_config.DateColumn("Date", format="DD/MM/YYYY"),
-                                                     "signe": st.column_config.NumberColumn("Montant", format="%.2f €"),
-                                                     "libelle": "Libellé", "tiers": "Tiers"})
-        st.caption(f"Total non rapproché : {eur(non_rap['signe'].sum())}. Cochez-les dans « Opérations » quand elles "
-                   "apparaissent sur un relevé.")
-    if st.button("Enregistrer ce contrôle"):
+        st.info("Aucun relevé validé : commencez par le premier relevé du compte (ouverture en 2023).")
+    if lecture_seule():
+        return
+    c1, c2, c3 = st.columns(3)
+    jour = c1.date_input("Date de fin du relevé", value=None, format="DD/MM/YYYY", key="pointage_date",
+                         min_value=d0 or None)
+    solde_releve = c2.number_input("Solde de fin imprimé sur le relevé (€)", step=0.01, format="%.2f",
+                                   value=None, key="pointage_solde")
+    pdf = c3.file_uploader("Relevé PDF (facultatif, archivé)", type=["pdf"], key="pointage_pdf")
+    if jour is None or solde_releve is None:
+        st.caption("Indiquez la date et le solde du relevé pour afficher les écritures à pointer.")
+        return
+    if d0 and jour <= d0:
+        st.error("Ce relevé est antérieur ou égal au dernier relevé validé.")
+        return
+
+    banque = ops[(ops["source"] != "Espèces") & (ops["date"] <= pd.Timestamp(jour))]
+    deja = float(banque.loc[banque["rapproche_b"], "signe"].sum())
+    candidats = banque[~banque["rapproche_b"]].sort_values("date")
+    vue = candidats[["id", "date", "libelle", "tiers", "signe"]].assign(pointer=False)
+    edite = st.data_editor(
+        vue[["pointer", "id", "date", "libelle", "tiers", "signe"]], hide_index=True, width="stretch",
+        key=f"pointage_{jour}", disabled=["id", "date", "libelle", "tiers", "signe"],
+        column_config={"pointer": st.column_config.CheckboxColumn("Sur le relevé"), "id": None,
+                       "date": st.column_config.DateColumn("Date", format="DD/MM/YYYY"), "libelle": "Libellé",
+                       "tiers": "Tiers", "signe": st.column_config.NumberColumn("Montant", format="%.2f €")})
+    coches = edite[edite["pointer"]]
+    pointe = round(deja + float(coches["signe"].sum()), 2)
+    ecart = round(float(solde_releve) - pointe, 2)
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Solde du relevé", eur(solde_releve))
+    m2.metric("Solde pointé", eur(pointe))
+    m3.metric("Écart", eur(ecart), delta="équilibré" if abs(ecart) < 0.005 else "à expliquer",
+              delta_color="normal" if abs(ecart) < 0.005 else "inverse")
+    if candidats.empty and abs(ecart) >= 0.005:
+        st.warning("Toutes les écritures sont pointées mais l'écart persiste : il manque des écritures. "
+                   "Saisissez-les ci-dessous.")
+
+    with st.expander("➕ Saisir une écriture qui figure sur le relevé mais pas dans la comptabilité",
+                     expanded=abs(ecart) >= 0.005 and candidats.empty):
+        sens = st.radio("Sens", ["Dépense", "Recette"], horizontal=True, key="pointage_sens")
+        with st.form("pointage_manquante", clear_on_submit=True):
+            a, b_, c = st.columns(3)
+            d = a.date_input("Date", value=jour, max_value=jour, format="DD/MM/YYYY")
+            montant = b_.number_input("Montant (€)", min_value=0.0, step=1.0, format="%.2f")
+            cat = c.selectbox("Catégorie", categories(sens))
+            libelle = st.text_input("Libellé (tel que sur le relevé)")
+            tiers = st.text_input("Tiers")
+            if st.form_submit_button("Ajouter, déjà pointée"):
+                if montant <= 0 or not libelle.strip():
+                    st.error("Le montant et le libellé sont obligatoires.")
+                else:
+                    backend().ajouter("operations", [metier.nouvelle_operation(
+                        d, sens, cat, libelle, montant, "Banque", "", tiers, "", f"Saisie au pointage du relevé du "
+                        f"{jour:%d/%m/%Y}", utilisateur(), mois_debut(), rapproche=True, origine="pointage")])
+                    journaliser("pointage", f"écriture ajoutée : {libelle} {montant} €")
+                    rafraichir()
+                    st.rerun()
+
+    b1, b2 = st.columns(2)
+    if b1.button(f"Enregistrer le pointage ({len(coches)} écriture(s))", disabled=coches.empty):
+        _pointer(coches["id"].tolist())
+        flash(f"{len(coches)} écriture(s) pointée(s). Écart restant : {eur(ecart)}.")
+        st.rerun()
+    if b2.button("Valider le relevé", type="primary", disabled=abs(ecart) >= 0.005,
+                 help="Possible seulement quand l'écart est nul."):
+        if not coches.empty:
+            _pointer(coches["id"].tolist())
+        lien = ranger_fichier("Relevés bancaires", f"releve_{jour:%Y-%m-%d}.pdf", pdf.getvalue(),
+                              "application/pdf") if pdf else ""
         backend().ajouter("releves", [{"id": metier.nouvel_id(), "date_releve": jour.isoformat(),
-                                       "solde_releve": round(solde_releve, 2), "solde_pointe": s["pointe"],
-                                       "ecart": ecart, "fichier": "", "cree_par": utilisateur(),
-                                       "cree_le": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}])
-        journaliser("banque", f"contrôle du relevé au {jour:%d/%m/%Y} : écart {ecart}")
+                                       "solde_releve": round(float(solde_releve), 2), "solde_pointe": pointe,
+                                       "ecart": 0, "fichier": lien, "cree_par": utilisateur(),
+                                       "cree_le": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "valide": "oui"}])
+        journaliser("pointage", f"relevé du {jour:%d/%m/%Y} validé ({eur(solde_releve)})")
         rafraichir()
-        st.success("Contrôle enregistré.")
+        flash(f"Relevé du {jour:%d/%m/%Y} validé : {eur(solde_releve)}. Passez au relevé suivant.")
+        st.rerun()
+
+
+def _pointer(ids: list[str]) -> None:
+    brut = charger("operations").copy()
+    brut.loc[brut["id"].isin(ids), "rapproche"] = "oui"
+    backend().remplacer("operations", brut)
+    journaliser("pointage", f"{len(ids)} écriture(s) pointée(s)")
+    rafraichir()
+
+
+def _releves_valides():
+    r = charger("releves")
+    r = r[r["valide"].map(metier.oui)] if not r.empty and "valide" in r else r.iloc[0:0]
+    if r.empty:
+        st.info("Aucun relevé validé.")
+        return
+    vue = r.assign(d=r["date_releve"].map(metier.lire_date)).sort_values("d", ascending=False)
+    vue["solde_releve"] = metier.nombres(vue["solde_releve"])
+    vue["fichier"] = vue["fichier"].where(vue["fichier"].astype(str).str.startswith("http"), None)
+    st.dataframe(vue[["d", "solde_releve", "fichier", "cree_par", "cree_le"]], hide_index=True, width="stretch",
+                 column_config={"d": st.column_config.DateColumn("Relevé du", format="DD/MM/YYYY"),
+                                "solde_releve": st.column_config.NumberColumn("Solde", format="%.2f €"),
+                                "fichier": st.column_config.LinkColumn("Relevé", display_text="📄 ouvrir"),
+                                "cree_par": "Validé par", "cree_le": "Le"})
+    if est_admin():
+        st.caption("Une erreur découverte après validation ? Annulez le dernier relevé validé : ses écritures sont "
+                   "déverrouillées, le pointage reste coché.")
+        dernier = vue.iloc[0]
+        if st.checkbox(f"Je confirme l'annulation de la validation du relevé du {dernier['d']:%d/%m/%Y}"):
+            if st.button("Annuler cette validation"):
+                brut = charger("releves").copy()
+                brut.loc[brut["id"] == dernier["id"], "valide"] = "annulé"
+                backend().remplacer("releves", brut)
+                journaliser("pointage", f"validation du relevé du {dernier['d']:%d/%m/%Y} annulée")
+                rafraichir()
+                st.rerun()

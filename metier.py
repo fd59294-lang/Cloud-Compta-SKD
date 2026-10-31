@@ -531,6 +531,27 @@ def _sens_categorie(libelle: str) -> str:
     return "Recette" if code.startswith("7") or code.startswith("R") or code.startswith("1") else "Dépense"
 
 
+# ------------------------------------------------------------------ relevés validés (verrouillage)
+def dernier_releve_valide(releves: pd.DataFrame) -> tuple[date | None, float]:
+    """Date et solde du dernier relevé validé (écart nul). (None, 0) s'il n'y en a pas."""
+    if releves is None or releves.empty or "valide" not in releves:
+        return None, 0.0
+    v = releves[releves["valide"].map(oui)]
+    if v.empty:
+        return None, 0.0
+    v = v.assign(d=v["date_releve"].map(lire_date)).dropna(subset=["d"]).sort_values("d")
+    if v.empty:
+        return None, 0.0
+    return v.iloc[-1]["d"], float(nombre(v.iloc[-1]["solde_releve"], 0.0))
+
+
+def verrouillees(ops: pd.DataFrame, date_verrou: date | None) -> pd.Series:
+    """Écritures bancaires pointées sur un relevé déjà validé : elles ne se modifient plus."""
+    if date_verrou is None or ops.empty:
+        return pd.Series(False, index=ops.index)
+    return (ops["source"] != "Espèces") & ops["rapproche_b"] & (ops["date"] <= pd.Timestamp(date_verrou))
+
+
 # ------------------------------------------------------------------ opérations en attente
 def serie_mensuelle(premiere: date, nombre_mois: int) -> list[date]:
     dates = []

@@ -66,7 +66,8 @@ toute adresse listée dans `admins` est créée automatiquement comme président
 4. **Association → Reprise et import** :
    - onglet *Excel d'origine* : déposez le classeur `.xlsm` → contrôlez que les soldes affichés (banque et
      pointé) sont ceux de l'Excel au moment de l'import, puis importez. Le pointage et les écritures
-     manquantes se terminent ensuite dans le logiciel (page **Banque → Contrôle du relevé**). Si vous
+     manquantes se terminent ensuite dans le logiciel, relevé par relevé (page **Banque → Pointage**, méthode dans
+     [POINTAGE.md](POINTAGE.md)). Si vous
      préférez finir dans l'Excel, réimportez-le : seules les nouvelles lignes sont ajoutées et les
      pointages faits entre-temps sont reportés ;
    - onglet *Version Google Sheets* : seulement si des données ont été saisies dans la version Apps Script
