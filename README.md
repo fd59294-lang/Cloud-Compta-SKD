@@ -1,39 +1,49 @@
-# Cloud Compta SKD
+# Cloud Compta SKD — gestion du club Sensei Karaté Do
 
-Gestion d'une association sportive sur Google Sheets + Google Apps Script :
-comptabilité (banque / espèces), adhérents par n° de licence FFKaraté, paiements
-adhésion / cotisation, factures et reçus PDF, dons et reçus fiscaux, import de
-relevés bancaires CSV avec rapprochement, justificatifs, budget prévisionnel,
-rapports d'AG et sauvegarde quotidienne.
+Logiciel de gestion du club, construit **sur le même modèle que le logiciel du Comité des Fêtes** :
 
-**Ce dépôt ne contient que le programme.** Toutes les données (adhérents, écritures,
-coordonnées du club, IBAN…) restent dans le Google Sheets et le Google Drive du club.
+```
+GitHub (ce dépôt) ──► hébergement en ligne ──► lien d'accès (connexion Google + liste d'utilisateurs)
+                                                   │
+                                                   ▼
+                          Google Sheets + Google Drive du compte du club (toutes les données)
+```
+
+Ce dépôt ne contient **que le programme**. Aucune donnée du club (adhérents, écritures, coordonnées,
+IBAN…) n'y figure : tout reste dans le Drive du club.
+
+## Ce que fait le logiciel
+
+| Pilotage | Comptabilité | Adhérents | Dons et documents |
+|---|---|---|---|
+| Tableau de bord (banque, caisse, résultat, reste à encaisser, graphiques) | Saisie avec justificatif PDF/photo | Fiche unique par n° de licence FFKaraté | Dons et reçus fiscaux Cerfa 11580 |
+| Budget prévisionnel prévu / réalisé / N-1 | Historique filtrable depuis 2023, export Excel | Inscription par saison, tarif selon l'âge, réduction famille, frais d'adhésion | Factures libres |
+| Rapport d'AG, compte financier, bilan, comparaison, synthèse mensuelle | Banque / espèces séparées, rapprochement | Paiements en plusieurs fois (chèque, virement, espèces, Pass'Sport…) | Fiches de remboursement de frais |
+| | Import des relevés CSV, contrôle du relevé | Reçus de paiement, factures de cotisation | Registre des documents émis |
+| | Opérations en attente (prélèvements prévus) | Restes à encaisser | Sauvegarde quotidienne, journal |
+
+La liste détaillée, fonction par fonction, avec son origine (Excel d'origine ou version Apps Script)
+est dans [INVENTAIRE.md](INVENTAIRE.md).
 
 ## Fichiers
 
 | Fichier | Rôle |
 |---|---|
-| `Code.js` | Script serveur (s'appelle `Code.gs` dans l'éditeur Apps Script) |
-| `interface.html` | Interface web (8 onglets) |
-| `appsscript.json` | Manifeste : fuseau Europe/Paris, moteur V8, accès « moi uniquement » |
+| `app.py` | Lancement, connexion, tableau de bord, paramètres, utilisateurs, sauvegarde |
+| `ecran_*.py` | Écrans : comptabilité, banque, adhérents, dons, documents, budget, rapports, reprise |
+| `metier.py`, `adherents.py` | Règles de gestion (testées sans interface) |
+| `documents.py`, `rapports.py` | PDF : factures, reçus, reçus fiscaux, remboursements, rapports d'AG |
+| `stockage.py` | Google Sheets + Drive (production) ou fichier Excel local (essai) — identique au Comité |
+| `outils/installer_google.py` | Installation unique sur le compte Google du club |
+| `tests/` | Tests automatiques (`python -m pytest`) |
 
-## Installation dans un nouveau Google Sheets
-
-1. Onglets attendus : `Operations_Historique`, `Membres_Cotisations`, `Configuration`
-   (les onglets `Dons_Recus`, `Budget`, `Dashboard` sont créés automatiquement).
-2. Extensions → Apps Script : coller `Code.js` dans `Code.gs` et créer le fichier HTML `interface`.
-3. Dans le Sheets : menu 🏛️ Association → 🔧 Maintenance → *Installer les dossiers Drive*.
-   Crée `Comptabilité Association` et ses 6 sous-dossiers, range le Sheets dans
-   `01_Données_Principales` et enregistre l'identifiant de chaque dossier dans `Configuration`
-   (aucune confusion possible avec des dossiers homonymes d'un autre compte).
-4. Déposer le logo dans `01_Données_Principales`, puis renseigner l'onglet `Configuration`.
-5. Déclencheur quotidien sur `sauvegardeAutomatique`.
-6. Déployer → Application Web (exécuter en tant que moi, accès moi uniquement).
-
-## Synchronisation avec clasp (optionnel)
+## Essai sur un ordinateur
 
 ```bash
-npm install -g @google/clasp
-clasp login
-clasp clone <ID_DU_SCRIPT> --rootDir .
+pip install -r requirements.txt
+streamlit run app.py          # mode essai : données dans ./donnees_locales, sans connexion
 ```
+
+## Mise en ligne
+
+Voir [GUIDE_MISE_EN_LIGNE.md](GUIDE_MISE_EN_LIGNE.md).

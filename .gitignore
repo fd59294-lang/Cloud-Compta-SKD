@@ -1,24 +1,30 @@
 # === Données du club : ne jamais versionner ===
+donnees_locales/
 *.xlsx
 *.xlsm
 *.xls
 *.csv
-*.ods
 *.pdf
-*.docx
 *.png
 *.jpg
 *.jpeg
+*.heic
 sauvegardes/
 exports/
-data/
 
-# === Identifiants clasp / Google ===
+# === Secrets et identifiants ===
+.streamlit/secrets.toml
+client_secret*.json
+credentials*.json
+token*.json
 .clasprc.json
-credentials.json
-token.json
 
-# === Système ===
+# === Python / système ===
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.venv/
 .DS_Store
 Thumbs.db
 desktop.ini
