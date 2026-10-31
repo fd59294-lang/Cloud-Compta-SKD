@@ -1,25 +1,29 @@
 # Mise en ligne — compte Google du club (senseikaratedo59)
 
-Même procédure que pour le Comité des Fêtes. Durée : environ 30 minutes, une seule fois.
+Même méthode que pour le Comité des Fêtes, mais tout est propre au club (projet Google Cloud, Drive, hébergement). Durée : environ 30 minutes, une seule fois.
 
 ```
 ① Google Cloud        ② Installation Drive        ③ Streamlit Cloud       ④ Premier lancement
 identifiants OAuth ──► script installer_google ──► depuis GitHub + ──► import de la reprise
-(projet du Comité)     (crée Sheets + dossiers)    secrets              (banque = 213,46 €)
+(projet du club)       (crée Sheets + dossiers)    secrets              (banque = 213,46 €)
 ```
 
-## ① Identifiants Google (projet Google Cloud du Comité)
+## ① Projet Google Cloud du club (propre à Sensei Karaté Do)
 
-Dans https://console.cloud.google.com, ouvrez le **même projet** que celui du Comité des Fêtes.
+Aucun élément partagé avec le Comité des Fêtes : projet, identifiants, Drive et données sont ceux du club.
+Connectez-vous à https://console.cloud.google.com avec **senseikaratedo59@gmail.com**.
 
-1. **API et services → Bibliothèque** : vérifiez que *Google Drive API* et *Google Sheets API* sont activées.
-2. **Écran de consentement OAuth → Utilisateurs test** : ajoutez `senseikaratedo59@gmail.com` et l'adresse
-   Google de chaque membre du bureau qui utilisera le logiciel.
-3. **Identifiants → Créer → ID client OAuth** :
-   - un client **« Application de bureau »** (pour l'installation, étape ②) → téléchargez le JSON ;
-   - un client **« Application Web »** (pour la connexion au logiciel). Dans *URI de redirection autorisés*,
-     ajoutez l'adresse du logiciel suivie de `/oauth2callback` (vous la connaîtrez à l'étape ③ ; revenez
-     la compléter).
+1. En haut, sélecteur de projet → **Nouveau projet** → nom `Sensei Karate Do Gestion` → Créer, puis
+   sélectionnez-le.
+2. **API et services → Bibliothèque** : activez *Google Drive API* puis *Google Sheets API*.
+3. **API et services → Écran de consentement OAuth** (ou *Google Auth Platform*) :
+   type **Externe** ; nom de l'application `Sensei Karaté Do — Gestion` ; e-mail d'assistance et contact :
+   `senseikaratedo59@gmail.com`. Dans **Audience → Utilisateurs test**, ajoutez `senseikaratedo59@gmail.com`
+   et l'adresse Google de chaque membre du bureau qui utilisera le logiciel.
+4. **Identifiants (ou Clients) → Créer un ID client OAuth**, deux fois :
+   - type **Application de bureau**, nom `installation` → téléchargez le JSON ;
+   - type **Application Web**, nom `logiciel`, *URI de redirection autorisés* :
+     `https://sensei-karate-do-haussy.streamlit.app/oauth2callback` → notez l'ID client et le code secret.
 
 ## ② Installation dans le Drive du club (une seule fois)
 
@@ -40,7 +44,8 @@ jamais dans GitHub. Supprimez ensuite le fichier `client_secret_bureau.json` de 
 
 ## ③ Hébergement sur Streamlit Community Cloud (comme `comite-fetes-haussy.streamlit.app`)
 
-1. Ouvrez https://share.streamlit.io avec le même compte que pour le Comité → **Create app** →
+1. Ouvrez https://share.streamlit.io (connexion avec le compte GitHub `fd59294-lang`, propriétaire du dépôt)
+   → **Create app** →
    **Deploy a public app from GitHub**.
 2. Renseignez :
    - *Repository* : `fd59294-lang/Cloud-Compta-SKD` — *Branch* : `main` — *Main file path* : `app.py`
@@ -58,9 +63,7 @@ server_metadata_url = "https://accounts.google.com/.well-known/openid-configurat
 # + le bloc [club] affiché par le script de l'étape ②
 ```
 
-4. **Deploy**. Retournez dans Google Cloud (étape ① 3.) et ajoutez l'URI de redirection
-   `https://sensei-karate-do-haussy.streamlit.app/oauth2callback` au client « Application Web ».
-   Dans *Écran de consentement → Lien vers la page d'accueil / règles de confidentialité*, mettez
+4. **Deploy**. Dans Google Cloud (projet du club), *Écran de consentement → Lien vers la page d'accueil / règles de confidentialité*, mettez
    `https://sensei-karate-do-haussy.streamlit.app/?page=confidentialite`.
 
 Ajoutez dans `admins` (bloc `[club]`) votre adresse Google personnelle si vous voulez vous connecter avec :
