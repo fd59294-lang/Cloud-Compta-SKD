@@ -61,8 +61,11 @@ MODES_PAIEMENT = ["Chèque", "Virement", "Espèces", "Pass'Sport", "Carte bancai
 NATURES_DON = ["Numéraire", "Don en nature"]
 
 # ------------------------------------------------------------------ tarifs (modifiables, par saison)
+TARIF_BENEVOLE = "Bénévole — licence offerte par le club"
 TARIFS_DEFAUT = [
     # (nom, âge mini, âge maxi, cotisation totale, dont licence FFK)
+    # Bénévole : jamais proposé d'après l'âge (999), à choisir ; cotisation 0, la licence reste payée par le club.
+    (TARIF_BENEVOLE, 999, 999, 0.0, 39.0),
     ("Enfant (jusqu'à 12 ans)", 0, 12, 129.0, 39.0),
     ("Ado / adulte (13 ans et plus)", 13, 120, 139.0, 39.0),
 ]

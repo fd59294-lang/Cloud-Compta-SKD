@@ -161,6 +161,9 @@ def adherents_actifs(adherents: pd.DataFrame) -> pd.DataFrame:
 
 
 # ------------------------------------------------------------------ import de l'export « licenciés » de l'extranet FFK
+TARIF_PARTICULIER = "Tarif particulier (situation sociale)"
+
+
 def lire_export_ffk(contenu: bytes) -> pd.DataFrame:
     """Export « LstExp_lstlic… .xls » de l'extranet FFKaraté : en réalité un texte tabulé (latin-1) dont les
     valeurs sont écrites ="…". Accepte aussi un vrai classeur Excel ou un CSV avec les mêmes colonnes."""
@@ -191,11 +194,14 @@ def _col(df: pd.DataFrame, *noms) -> str | None:
 
 def preparer_import_ffk(ffk: pd.DataFrame, adherents: pd.DataFrame, inscriptions: pd.DataFrame,
                         tarifs: pd.DataFrame, mois_debut: int, utilisateur: str, maintenant: str,
-                        nouvel_id) -> dict:
+                        nouvel_id, benevoles: set[str] | None = None) -> dict:
     """Fiches adhérents (une par licence) et inscriptions (une par saison) à partir d'exports FFK.
 
     Saison = celle de la fin de validité de la licence (31/08/2026 → saison 2025-2026).
-    Aucun paiement ni aucune écriture comptable n'est créé : les cotisations sont déjà en comptabilité."""
+    Aucun paiement ni aucune écriture comptable n'est créé : les cotisations sont déjà en comptabilité.
+    benevoles = n° de licence des bénévoles : tarif « Bénévole », cotisation 0 (licence offerte par le club)."""
+    from referentiel import TARIF_BENEVOLE
+    benevoles = {normaliser_licence(x) for x in (benevoles or set())}
     from metier import bornes_exercice, exercice_de
     c_lic, c_nom, c_pre = _col(ffk, "code", "licence", "n_licence"), _col(ffk, "nom"), _col(ffk, "prenom")
     c_nai, c_vil = _col(ffk, "naissance", "date_de_naissance"), _col(ffk, "ville", "adresse")
@@ -248,9 +254,12 @@ def preparer_import_ffk(ffk: pd.DataFrame, adherents: pd.DataFrame, inscriptions
             deja.add((aid, saison))
             debut = bornes_exercice(saison, mois_debut)[0]
             t = tarifs_saison(tarifs, saison)
-            nom_tarif = tarif_suggere(tarifs, saison, naissance, debut) if not t.empty else None
-            ligne_t = t[t["nom"] == nom_tarif] if nom_tarif else t.iloc[0:0]
-            cot = float(ligne_t.iloc[0]["cotisation"]) if not ligne_t.empty else 0.0
+            if lic in benevoles:
+                nom_tarif, cot = TARIF_BENEVOLE, 0.0
+            else:
+                nom_tarif = tarif_suggere(tarifs, saison, naissance, debut) if not t.empty else None
+                ligne_t = t[t["nom"] == nom_tarif] if nom_tarif else t.iloc[0:0]
+                cot = float(ligne_t.iloc[0]["cotisation"]) if not ligne_t.empty else 0.0
             nouvelles.append({"id": nouvel_id(), "adherent_id": aid, "saison": str(saison),
                               "tarif": nom_tarif or "À préciser", "cotisation": cot, "frais_adhesion": 0.0,
                               "reduction": 0.0, "total_du": cot,
@@ -264,3 +273,12 @@ def preparer_import_ffk(ffk: pd.DataFrame, adherents: pd.DataFrame, inscriptions
                         "cotisation": nouvelles[-1]["cotisation"] if "inscription créée" in action else None,
                         "action": ", ".join(action)})
     return {"adherents": nouveaux, "inscriptions": nouvelles, "rapport": pd.DataFrame(rapport)}
+
+
+def benevoles_connus(adherents: pd.DataFrame, inscriptions: pd.DataFrame) -> set[str]:
+    """Licences déjà inscrites au tarif bénévole une saison précédente (pré-cochées au prochain import)."""
+    from referentiel import TARIF_BENEVOLE
+    if adherents.empty or inscriptions.empty:
+        return set()
+    ids = set(inscriptions.loc[inscriptions["tarif"] == TARIF_BENEVOLE, "adherent_id"])
+    return {normaliser_licence(l) for l in adherents.loc[adherents["id"].isin(ids), "licence"]}

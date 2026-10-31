@@ -264,3 +264,19 @@ def test_import_export_ffk():
     again = A.preparer_import_ffk(ffk, pd.DataFrame(res["adherents"]), pd.DataFrame(res["inscriptions"]), tar, 9,
                                   "t", "now", lambda: f"j{next(n)}")
     assert not again["adherents"] and not again["inscriptions"]
+
+
+def test_import_ffk_benevoles():
+    import itertools
+    from referentiel import TARIF_BENEVOLE, TARIFS_DEFAUT
+    texte = ("Code\tNom\tPrénom\tNaissance\tVal.Fin\r\n" '="1000002B"\t="DURAND"\t="ANNE"\t03/04/1980\t31/08/2026\r\n')
+    tar = pd.DataFrame([{"saison": "2025", "nom": n, "age_min": a, "age_max": b, "cotisation": c, "dont_licence": l}
+                        for n, a, b, c, l in TARIFS_DEFAUT])
+    n = itertools.count()
+    ffk = A.lire_export_ffk(texte.encode("latin-1"))
+    res = A.preparer_import_ffk(ffk, pd.DataFrame(), pd.DataFrame(), tar, 9, "t", "now", lambda: f"i{next(n)}",
+                                benevoles={"1000002b"})
+    assert res["inscriptions"][0]["tarif"] == TARIF_BENEVOLE and res["inscriptions"][0]["total_du"] == 0
+    assert A.benevoles_connus(pd.DataFrame(res["adherents"]), pd.DataFrame(res["inscriptions"])) == {"1000002B"}
+    sans = A.preparer_import_ffk(ffk, pd.DataFrame(), pd.DataFrame(), tar, 9, "t", "now", lambda: f"j{next(n)}")
+    assert sans["inscriptions"][0]["tarif"].startswith("Ado")        # jamais proposé d'après l'âge

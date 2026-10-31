@@ -10,7 +10,7 @@ import streamlit as st
 
 import metier
 from referentiel import (CATEGORIES_DEFAUT, DOSSIERS_DRIVE, PARAMETRES_CLUB, REDUCTION_FAMILLE_DEFAUT,
-                         ROLES_ADMIN, ROLES_SAISIE, TARIFS_DEFAUT, FRAIS_ADHESION_DEFAUT)
+                         ROLES_ADMIN, ROLES_SAISIE, TARIF_BENEVOLE, TARIFS_DEFAUT, FRAIS_ADHESION_DEFAUT)
 from stockage import creer_backend, lire_config
 
 _VERROU_NUMEROS = threading.Lock()
@@ -92,6 +92,18 @@ def initialiser_si_vide() -> None:
         saison = metier.exercice_de(date.today(), mois_debut())
         backend().ajouter("tarifs", [{"saison": saison, "nom": n, "age_min": a, "age_max": b, "cotisation": c,
                                       "dont_licence": l} for n, a, b, c, l in TARIFS_DEFAUT])
+        modifie = True
+    # Mises à jour du programme : nouvelles catégories par défaut (ex. 6238) et tarif bénévole
+    cats = charger("categories")
+    manquantes = [(c, n, s) for c, n, s in CATEGORIES_DEFAUT if c not in set(cats["code"].astype(str))]
+    if not cats.empty and manquantes:
+        backend().ajouter("categories", [{"code": c, "nom": n, "sens": s, "actif": "oui"} for c, n, s in manquantes])
+        modifie = True
+    tarifs = charger("tarifs")
+    if not tarifs.empty and TARIF_BENEVOLE not in set(tarifs["nom"]):
+        saison = int(metier.nombres(tarifs["saison"]).max())
+        backend().ajouter("tarifs", [{"saison": saison, "nom": n, "age_min": a, "age_max": b, "cotisation": c,
+                                      "dont_licence": l} for n, a, b, c, l in TARIFS_DEFAUT if n == TARIF_BENEVOLE])
         modifie = True
     if parametre("mois_debut_exercice") == "":
         ecrire_parametres({"mois_debut_exercice": 9, "reduction_famille": REDUCTION_FAMILLE_DEFAUT,

@@ -355,9 +355,20 @@ def _licencies_ffk():
             st.error(f"{f.name} illisible : {e}")
             return
     ffk = pd.concat(morceaux, ignore_index=True)
+    noms = {}
+    if "code" in ffk.columns:
+        for r in ffk.to_dict("records"):
+            noms[A.normaliser_licence(r["code"])] = f"{r.get('nom', '')} {str(r.get('prenom', '')).title()}".strip()
+    connus = A.benevoles_connus(charger("adherents"), charger("inscriptions")) & set(noms)
+    benevoles = st.multiselect(
+        "Bénévoles — licence offerte par le club (ne paient pas de cotisation)", sorted(noms, key=noms.get),
+        default=sorted(connus, key=noms.get), format_func=lambda l: f"{noms[l]} ({l})", key="ffk_benevoles", placeholder="Choisir les bénévoles",
+        help="Inscrits au tarif « Bénévole » à 0 € : statut « À jour ». La licence payée à la FFK reste une "
+             "dépense du club. Pré-cochés : bénévoles d'une saison déjà importée.")
     try:
         res = A.preparer_import_ffk(ffk, charger("adherents"), charger("inscriptions"), charger("tarifs"),
-                                    mois_debut(), utilisateur(), metier.maintenant(), metier.nouvel_id)
+                                    mois_debut(), utilisateur(), metier.maintenant(), metier.nouvel_id,
+                                    benevoles=set(benevoles))
     except ValueError as e:
         st.error(str(e))
         return
@@ -369,14 +380,32 @@ def _licencies_ffk():
     if not rap.empty:
         rap = rap.assign(saison=rap["saison"].map(lambda x: metier.libelle_exercice(int(x), mois_debut())
                                                   if str(x).strip() not in ("", "nan") else ""))
-    st.dataframe(rap, hide_index=True, width="stretch",
-                 column_config={"licence": "Licence", "nom": "Nom", "saison": "Saison", "age": "Âge (début saison)",
-                                "tarif": "Tarif", "cotisation": st.column_config.NumberColumn("Cotisation",
-                                                                                              format="%.2f €"),
-                                "action": "Action"})
-    st.caption("Les cotisations sont celles des tarifs de la saison (Adhérents → Tarifs). Vérifiez les tarifs des "
-               "saisons passées avant d'importer ; réduction famille et frais d'adhésion se corrigent ensuite "
-               "sur chaque inscription.")
+    if not rap[rap["action"].str.startswith("Ignoré")].empty:
+        st.dataframe(rap[rap["action"].str.startswith("Ignoré")][["licence", "nom", "action"]], hide_index=True)
+    ins = pd.DataFrame(res["inscriptions"])
+    if not ins.empty:
+        st.markdown("**Inscriptions à créer** — modifiez si besoin le tarif, le montant convenu (tarif particulier, "
+                    "situation sociale…), la réduction famille ou la note avant d'importer.")
+        nom_de = {a["id"]: f"{a['nom']} {a['prenom']}" for a in res["adherents"]}
+        nom_de.update({r["id"]: A.nom_complet(r) for r in charger("adherents").to_dict("records")})
+        tarifs_noms = sorted(set(charger("tarifs")["nom"]) | set(ins["tarif"]) | {A.TARIF_PARTICULIER})
+        vue = ins.assign(nom=ins["adherent_id"].map(nom_de),
+                         saison_l=ins["saison"].map(lambda x: metier.libelle_exercice(int(x), mois_debut())))
+        vue = vue[["nom", "saison_l", "tarif", "cotisation", "reduction", "notes"]]
+        edite = st.data_editor(
+            vue, hide_index=True, width="stretch", key="ffk_inscriptions", disabled=["nom", "saison_l"],
+            column_config={"nom": "Adhérent", "saison_l": "Saison",
+                           "tarif": st.column_config.SelectboxColumn("Tarif", options=tarifs_noms, required=True),
+                           "cotisation": st.column_config.NumberColumn("Montant convenu", min_value=0.0,
+                                                                       format="%.2f €"),
+                           "reduction": st.column_config.NumberColumn("Réduction", min_value=0.0, format="%.2f €"),
+                           "notes": "Notes"})
+        for k, r in enumerate(edite.to_dict("records")):
+            cot, red = float(r["cotisation"] or 0), float(r["reduction"] or 0)
+            res["inscriptions"][k].update(tarif=r["tarif"], cotisation=cot, reduction=red,
+                                          total_du=round(max(cot - red, 0.0), 2), notes=r["notes"] or "")
+        st.caption(f"Total dû par les adhérents : {eur(sum(i['total_du'] for i in res['inscriptions']))}. "
+                   "Les tarifs des saisons passées se règlent aussi dans Adhérents → Tarifs.")
     if (res["adherents"] or res["inscriptions"]) and st.button(
             f"Importer {len(res['adherents'])} adhérent(s) et {len(res['inscriptions'])} inscription(s)",
             type="primary", key="imp_ffk"):
