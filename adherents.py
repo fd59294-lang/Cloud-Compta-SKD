@@ -329,9 +329,10 @@ def preparer_reprise_adherents(contenu: bytes, adherents: pd.DataFrame, inscript
     ops = operations.copy()
     par_lic = {normaliser_licence(r["licence"]): r["id"] for r in adh.to_dict("records") if r.get("licence")}
     insc = {(r["adherent_id"], int(float(r["saison"] or 0))): r["id"] for r in ins.to_dict("records")}
-    deja_pai = {(r["inscription_id"], str(lire_date(r["date"])), round(float(nombres(pd.Series([r["montant"]]))[0]
-                                                                              or 0), 2))
-                for r in pai.to_dict("records")}
+    from collections import Counter
+    # paiements déjà en base (compteur : deux paiements identiques le même jour restent possibles)
+    deja_pai = Counter((r["inscription_id"], str(lire_date(r["date"])),
+                        round(float(nombres(pd.Series([r["montant"]]))[0] or 0), 2)) for r in pai.to_dict("records"))
     nv_adh, nv_ins, nv_pai, erreurs = [], [], [], []
 
     for k, r in enumerate(feuille("Adhérents").to_dict("records"), start=2):
@@ -375,7 +376,15 @@ def preparer_reprise_adherents(contenu: bytes, adherents: pd.DataFrame, inscript
 
     if not ops.empty:
         ops = ops.assign(_d=ops["date"].map(lambda x: str(lire_date(x))),
-                         _m=nombres(ops["montant"]).fillna(0).round(2))
+                         _m=nombres(ops["montant"]).fillna(0).round(2),
+                         _t=(ops["libelle"].astype(str) + " " + ops["tiers"].astype(str) + " "
+                             + ops.get("notes", "").astype(str)).map(lambda t: sans_accent(t).lower()))
+    # Montant déjà rattaché à chaque écriture (une remise de chèques peut couvrir plusieurs paiements)
+    rattache = {}
+    for r in pai.to_dict("records"):
+        if r.get("operation_id"):
+            rattache[r["operation_id"]] = rattache.get(r["operation_id"], 0.0) + float(
+                nombres(pd.Series([r["montant"]]))[0] or 0)
     for k, r in enumerate(feuille("Paiements").to_dict("records"), start=2):
         lic, saison = normaliser_licence(r.get("Licence")), _saison_de(r.get("Saison"), mois_debut)
         aid = par_lic.get(lic)
@@ -384,20 +393,32 @@ def preparer_reprise_adherents(contenu: bytes, adherents: pd.DataFrame, inscript
         if not iid or not jour or montant <= 0:
             erreurs.append(f"Paiements, ligne {k} : inscription introuvable, date ou montant illisible ({lic}).")
             continue
-        if (iid, str(jour), round(montant, 2)) in deja_pai:
+        cle = (iid, str(jour), round(montant, 2))
+        if deja_pai[cle] > 0:
+            deja_pai[cle] -= 1
             continue
         op_id = ""
         d_op, m_op = lire_date(r.get("Écriture du")), nombre(r.get("Montant de l'écriture"), 0.0)
         if d_op and m_op:
             x = ops[(ops["_d"] == str(d_op)) & (ops["_m"] == round(m_op, 2)) & (ops["sens"] == "Recette")] \
                 if not ops.empty else ops
-            if len(x) == 1:
+            # écritures encore assez « libres » pour ce paiement, puis la plus proche du payeur / de l'adhérent
+            x = x[[round(m - rattache.get(i, 0.0), 2) >= round(montant, 2) for i, m in zip(x["id"], x["_m"])]] \
+                if not x.empty else x
+            if not x.empty:
+                mots = {m for m in sans_accent(f"{r.get('Payé par', '')} {r.get('Libellé de l écriture', '')} "
+                                               f"{lic}").lower().replace("-", " ").split() if len(m) > 2}
+                if aid:
+                    mots |= {m for m in sans_accent(" ".join(
+                        str(a.get("nom", "")) for a in nv_adh + adh.to_dict("records") if a.get("id") == aid
+                    )).lower().replace("-", " ").split() if len(m) > 2}
+                score = x["_t"].map(lambda t: sum(m in t for m in mots))
+                x = x.assign(_s=score).sort_values("_s", ascending=False, kind="stable")
                 op_id = x.iloc[0]["id"]
+                rattache[op_id] = rattache.get(op_id, 0.0) + montant
             else:
-                erreurs.append(f"Paiements, ligne {k} : écriture du {d_op:%d/%m/%Y} de {m_op:.2f} € "
-                               f"{'introuvable' if x.empty else 'en plusieurs exemplaires'} en comptabilité "
-                               "(paiement repris sans lien).")
-        deja_pai.add((iid, str(jour), round(montant, 2)))
+                erreurs.append(f"Paiements, ligne {k} : aucune écriture de {m_op:.2f} € le {d_op:%d/%m/%Y} disponible "
+                               "en comptabilité (paiement repris sans lien).")
         nv_pai.append({"id": nouvel_id(), "inscription_id": iid, "adherent_id": aid, "saison": str(saison),
                        "date": jour.isoformat(), "montant": round(montant, 2), "mode": str(r.get("Mode", "")).strip(),
                        "payeur": str(r.get("Payé par", "")).strip(), "operation_id": op_id, "recu": "",

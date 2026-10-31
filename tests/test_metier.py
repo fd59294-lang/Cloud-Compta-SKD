@@ -314,3 +314,29 @@ def test_reprise_adherents_complete():
                                          pd.DataFrame(res["inscriptions"]), pd.DataFrame(res["paiements"]), ops, 9,
                                          "t", "now", lambda: f"j{next(n)}")
     assert not (again["adherents"] or again["inscriptions"] or again["paiements"])
+
+
+def test_reprise_deux_paiements_identiques_meme_jour():
+    """2 × 50 € le même jour pour le même adhérent, rattachés à 2 écritures distinctes de 50 € (par le nom)."""
+    import io
+    import itertools
+    from datetime import date
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as w:
+        pd.DataFrame([["1A", "MONNIER", "Léo"] + [""] * 7], columns=A.FEUILLES_REPRISE["Adhérents"]).to_excel(
+            w, sheet_name="Adhérents", index=False)
+        pd.DataFrame([["1A", "2023-2024", "Cotisation", 100, 0, 0, ""]],
+                     columns=A.FEUILLES_REPRISE["Inscriptions"]).to_excel(w, sheet_name="Inscriptions", index=False)
+        pd.DataFrame([["1A", "2023-2024", "19/09/2023", 50, "Espèces", "MONNIER Paul", "19/09/2023", 50]] * 2,
+                     columns=A.FEUILLES_REPRISE["Paiements"]).to_excel(w, sheet_name="Paiements", index=False)
+    d = date(2023, 9, 19)
+    ops = pd.DataFrame([metier.nouvelle_operation(d, "Recette", "756", "Pass DURAND", 50, "Banque", "", "DURAND", "",
+                                                  "", "t"),
+                        metier.nouvelle_operation(d, "Recette", "756", "Espèces", 50, "Banque", "", "MONNIER Paul", "",
+                                                  "", "t"),
+                        metier.nouvelle_operation(d, "Recette", "756", "Pass MONNIER", 50, "Banque", "", "", "", "",
+                                                  "t")])
+    n = itertools.count()
+    res = A.preparer_reprise_adherents(buf.getvalue(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), ops, 9, "t",
+                                       "now", lambda: f"i{next(n)}")
+    assert [p["operation_id"] for p in res["paiements"]] == [ops["id"][1], ops["id"][2]]
