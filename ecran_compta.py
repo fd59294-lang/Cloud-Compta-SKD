@@ -66,7 +66,8 @@ def formulaire_operation(cle: str, defaut: dict | None = None) -> dict | None:
         st.error("Le montant et le libellé sont obligatoires.")
         return None
     d0, _ = metier.dernier_releve_valide(charger("releves"))
-    if d0 and source == "Banque" and rapproche and jour <= d0:
+    pointee_sur = metier.lire_date(d.get("releve", "")) or jour     # relevé sur lequel l'écriture est pointée
+    if d0 and source == "Banque" and rapproche and pointee_sur <= d0:
         st.error(f"Le relevé du {d0:%d/%m/%Y} est validé : une écriture bancaire pointée ne peut plus être ajoutée ou "
                  "modifiée avant cette date (annulez d'abord la validation dans Banque → Relevés validés).")
         return None
@@ -74,7 +75,8 @@ def formulaire_operation(cle: str, defaut: dict | None = None) -> dict | None:
     if justificatif is not None:
         lien = ranger_justificatif(justificatif, jour, libelle) or lien
     return metier.nouvelle_operation(jour, sens, cat, libelle, montant, source, mode, tiers or "", piece, notes,
-                                     utilisateur(), mois_debut(), rapproche=rapproche, justificatif=lien)
+                                     utilisateur(), mois_debut(), rapproche=rapproche, justificatif=lien,
+                                     releve=metier.lire_date(d.get("releve", "")))
 
 
 # ====================================================================== saisie
@@ -182,14 +184,15 @@ def page_operations():
                 "concernée pour garder le reçu cohérent.")
     d0, _ = metier.dernier_releve_valide(charger("releves"))
     if bool(metier.verrouillees(v[v["id"] == choix], d0).any()):
-        st.warning(f"Écriture pointée sur un relevé validé (jusqu'au {d0:%d/%m/%Y}) : elle est verrouillée. Pour la "
-                   "corriger, annulez d'abord la validation du relevé (Banque → Relevés validés).")
+        _completer_verrouillee(ligne, d0)
         return
     defaut = {**ligne.to_dict(), "date": ligne["date"].date() if pd.notna(ligne["date"]) else date.today()}
     corrigee = formulaire_operation(f"edition_{choix}", defaut)
     if corrigee:
         brut = charger("operations").copy()
         corrigee.update(id=choix, saisi_par=ligne["saisi_par"], saisi_le=ligne["saisi_le"], origine=ligne["origine"])
+        if corrigee.get("rapproche") == "oui" and not corrigee.get("releve"):
+            corrigee["releve"] = ligne.get("releve", "") or ""      # garder le relevé de pointage
         for col, val in corrigee.items():
             brut.loc[brut["id"] == choix, col] = str(val)
         backend().remplacer("operations", brut)
@@ -205,6 +208,54 @@ def page_operations():
             rafraichir()
             flash("Opération supprimée.")
             st.rerun()
+
+
+def _completer_verrouillee(ligne, d0) -> None:
+    """Écriture d'un relevé validé : date, montant, sens, source et pointage sont figés (ils font le solde du
+    relevé) ; la catégorie, le libellé, le tiers, la pièce, les notes et le justificatif restent modifiables."""
+    st.info(f"Écriture pointée sur un relevé validé (jusqu'au {d0:%d/%m/%Y}) : **date, montant, sens et pointage "
+            "sont verrouillés**. Vous pouvez corriger la catégorie, le libellé, le tiers, la pièce, les notes et le "
+            "justificatif. Pour changer le reste, annulez d'abord la validation du relevé (Banque → Relevés validés).")
+    st.caption(f"{ligne['date']:%d/%m/%Y} · {ligne['sens']} · {eur(float(ligne['montant']))} · {ligne['source']}")
+    choix = ligne["id"]
+    cats = categories(ligne["sens"])
+    if ligne["categorie"] and ligne["categorie"] not in cats:
+        cats.append(ligne["categorie"])
+    tiers_liste = tiers_connus()
+    if ligne["tiers"] and ligne["tiers"] not in tiers_liste:
+        tiers_liste.append(ligne["tiers"])
+    with st.form(f"completer_{choix}"):
+        c1, c2 = st.columns(2)
+        cat = c1.selectbox("Catégorie", cats, index=cats.index(ligne["categorie"]) if ligne["categorie"] in cats else 0)
+        modes = [""] + MODES_PAIEMENT
+        mode = c2.selectbox("Mode de paiement", modes,
+                            index=modes.index(ligne["mode_paiement"]) if ligne["mode_paiement"] in modes else 0)
+        libelle = st.text_input("Libellé", value=ligne["libelle"])
+        c3, c4 = st.columns(2)
+        tiers = c3.selectbox("Tiers", tiers_liste, index=tiers_liste.index(ligne["tiers"]) if ligne["tiers"] else None,
+                             accept_new_options=True, placeholder="adhérent, donateur, fournisseur…")
+        piece = c4.text_input("N° de pièce", value=ligne["piece"])
+        notes = st.text_input("Notes", value=ligne["notes"])
+        justificatif = st.file_uploader("Justificatif (PDF ou photo, facultatif)",
+                                        type=["pdf", "jpg", "jpeg", "png", "heic", "webp"])
+        valide = st.form_submit_button("Enregistrer", type="primary")
+    if not valide:
+        return
+    if not libelle.strip():
+        st.error("Le libellé est obligatoire.")
+        return
+    lien = ligne["justificatif"]
+    if justificatif is not None:
+        lien = ranger_justificatif(justificatif, ligne["date"].date(), libelle) or lien
+    brut = charger("operations").copy()
+    for col, val in {"categorie": cat, "mode_paiement": mode, "libelle": libelle.strip(), "tiers": tiers or "",
+                     "piece": piece, "notes": notes, "justificatif": lien}.items():
+        brut.loc[brut["id"] == choix, col] = str(val)
+    backend().remplacer("operations", brut)
+    journaliser("correction", f"{_resume(ligne)} → {cat} / {tiers or ''}")
+    rafraichir()
+    flash("Opération complétée.")
+    st.rerun()
 
 
 def _resume(r) -> str:
