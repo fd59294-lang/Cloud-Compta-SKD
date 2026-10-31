@@ -247,8 +247,13 @@ def page_parametres():
         c1.image(logo(), width=110)
     fichier = c2.file_uploader("Nouveau logo (PNG ou JPG)", type=["png", "jpg", "jpeg"])
     if fichier and c2.button("Enregistrer ce logo"):
-        lieu = backend().enregistrer_fichier("Logo", f"logo_{datetime.now():%Y%m%d%H%M}.{fichier.name.split('.')[-1]}",
-                                             fichier.getvalue(), fichier.type or "image/png")
+        try:
+            lieu = backend().enregistrer_fichier("Logo",
+                                                 f"logo_{datetime.now():%Y%m%d%H%M}.{fichier.name.split('.')[-1]}",
+                                                 fichier.getvalue(), fichier.type or "image/png")
+        except Exception as e:  # noqa: BLE001
+            st.error(f"Envoi du logo vers le Drive impossible pour le moment ({type(e).__name__}). Réessayez.")
+            return
         ecrire_parametre("logo_fichier", lieu)
         logo.clear()
         journaliser("paramètres", "logo")

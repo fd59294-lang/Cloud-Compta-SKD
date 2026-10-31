@@ -161,7 +161,6 @@ class BackendGoogle(Backend):
 
     def __init__(self, conf: dict):
         import gspread
-        from googleapiclient.discovery import build
 
         info = conf["google_credentials"]
         if isinstance(info, str):
@@ -170,8 +169,17 @@ class BackendGoogle(Backend):
         self.gc = gspread.authorize(self.creds)
         self.classeur = self.gc.open_by_key(conf["spreadsheet_id"])
         self.dossiers = dict(conf.get("dossiers") or {})
-        self.drive = build("drive", "v3", credentials=self.creds, cache_discovery=False)
         self._onglets = {}
+
+    @property
+    def drive(self):
+        """Client Drive neuf à chaque appel : la connexion HTTP (httplib2) ne se partage pas entre les sessions
+        de l'application et se coupe après un temps d'inactivité (erreur SSL à l'envoi d'un fichier)."""
+        from googleapiclient.discovery import build
+        import google_auth_httplib2
+        import httplib2
+        http = google_auth_httplib2.AuthorizedHttp(self.creds, http=httplib2.Http(timeout=120))
+        return build("drive", "v3", http=http, cache_discovery=False)
 
     def _onglet(self, table: str):
         if table not in self._onglets:
@@ -217,8 +225,8 @@ class BackendGoogle(Backend):
         from googleapiclient.http import MediaIoBaseUpload
         parent = self.dossiers.get(dossier)
         meta = {"name": nom, **({"parents": [parent]} if parent else {})}
-        media = MediaIoBaseUpload(io.BytesIO(contenu), mimetype=mime, resumable=False)
-        f = self.drive.files().create(body=meta, media_body=media, fields="id,webViewLink").execute()
+        media = MediaIoBaseUpload(io.BytesIO(contenu), mimetype=mime, resumable=True, chunksize=5 * 1024 * 1024)
+        f = self.drive.files().create(body=meta, media_body=media, fields="id,webViewLink").execute(num_retries=4)
         return f.get("webViewLink", f["id"])
 
     @staticmethod
@@ -238,7 +246,7 @@ class BackendGoogle(Backend):
         telechargement = MediaIoBaseDownload(buf, requete)
         fini = False
         while not fini:
-            _, fini = telechargement.next_chunk()
+            _, fini = telechargement.next_chunk(num_retries=4)
         return buf.getvalue()
 
     def preparer_dossiers(self, noms):
@@ -251,9 +259,9 @@ class BackendGoogle(Backend):
             nom_racine = "Sensei Karaté Do — Gestion"
             trouves = self.drive.files().list(
                 q=f"name = '{nom_racine}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
-                fields="files(id)").execute().get("files", [])
+                fields="files(id)").execute(num_retries=4).get("files", [])
             racine = trouves[0]["id"] if trouves else self.drive.files().create(
-                body={"name": nom_racine, "mimeType": "application/vnd.google-apps.folder"}, fields="id").execute()["id"]
+                body={"name": nom_racine, "mimeType": "application/vnd.google-apps.folder"}, fields="id").execute(num_retries=4)["id"]
         resultat = {"_racine": racine}
         for n in noms:
             if self.dossiers.get(n):
@@ -261,9 +269,9 @@ class BackendGoogle(Backend):
                 continue
             trouves = self.drive.files().list(
                 q=(f"name = '{n}' and '{racine}' in parents and mimeType = 'application/vnd.google-apps.folder' "
-                   "and trashed = false"), fields="files(id)").execute().get("files", [])
+                   "and trashed = false"), fields="files(id)").execute(num_retries=4).get("files", [])
             resultat[n] = trouves[0]["id"] if trouves else self.drive.files().create(
                 body={"name": n, "mimeType": "application/vnd.google-apps.folder", "parents": [racine]},
-                fields="id").execute()["id"]
+                fields="id").execute(num_retries=4)["id"]
         self.dossiers.update(resultat)
         return resultat
