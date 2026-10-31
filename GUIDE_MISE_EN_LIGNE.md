@@ -3,9 +3,9 @@
 Même procédure que pour le Comité des Fêtes. Durée : environ 30 minutes, une seule fois.
 
 ```
-① Google Cloud        ② Installation Drive        ③ Hébergement          ④ Premier lancement
-identifiants OAuth ──► script installer_google ──► depuis GitHub + ──► reprise de l'Excel
-(projet du Comité)     (crée Sheets + dossiers)    secrets              (le solde doit égaler l'Excel)
+① Google Cloud        ② Installation Drive        ③ Streamlit Cloud       ④ Premier lancement
+identifiants OAuth ──► script installer_google ──► depuis GitHub + ──► import de la reprise
+(projet du Comité)     (crée Sheets + dossiers)    secrets              (banque = 213,46 €)
 ```
 
 ## ① Identifiants Google (projet Google Cloud du Comité)
@@ -38,14 +38,18 @@ Connectez-vous avec **le compte du club**. Le script crée dans son Drive :
 Il affiche ensuite un bloc `[club]` : copiez-le, il sert à l'étape ③. Ne le partagez pas et ne le mettez
 jamais dans GitHub. Supprimez ensuite le fichier `client_secret_bureau.json` de l'ordinateur.
 
-## ③ Hébergement depuis GitHub
+## ③ Hébergement sur Streamlit Community Cloud (comme `comite-fetes-haussy.streamlit.app`)
 
-Déployez le dépôt `fd59294-lang/Cloud-Compta-SKD` (fichier principal `app.py`) de la même façon que
-`comite-fetes`, puis collez dans les **secrets** de l'application :
+1. Ouvrez https://share.streamlit.io avec le même compte que pour le Comité → **Create app** →
+   **Deploy a public app from GitHub**.
+2. Renseignez :
+   - *Repository* : `fd59294-lang/Cloud-Compta-SKD` — *Branch* : `main` — *Main file path* : `app.py`
+   - *App URL* : `sensei-karate-do-haussy` → adresse **https://sensei-karate-do-haussy.streamlit.app**
+3. **Advanced settings** : *Python version* **3.12**, puis collez dans *Secrets* :
 
 ```toml
 [auth]
-redirect_uri = "https://ADRESSE-DU-LOGICIEL/oauth2callback"
+redirect_uri = "https://sensei-karate-do-haussy.streamlit.app/oauth2callback"
 cookie_secret = "une longue phrase aléatoire"
 client_id = "… (client « Application Web »)"
 client_secret = "…"
@@ -54,8 +58,14 @@ server_metadata_url = "https://accounts.google.com/.well-known/openid-configurat
 # + le bloc [club] affiché par le script de l'étape ②
 ```
 
+4. **Deploy**. Retournez dans Google Cloud (étape ① 3.) et ajoutez l'URI de redirection
+   `https://sensei-karate-do-haussy.streamlit.app/oauth2callback` au client « Application Web ».
+   Dans *Écran de consentement → Lien vers la page d'accueil / règles de confidentialité*, mettez
+   `https://sensei-karate-do-haussy.streamlit.app/?page=confidentialite`.
+
 Ajoutez dans `admins` (bloc `[club]`) votre adresse Google personnelle si vous voulez vous connecter avec :
 toute adresse listée dans `admins` est créée automatiquement comme président(e) à sa première connexion.
+Les secrets se modifient ensuite dans *Manage app → Settings → Secrets* (jamais dans GitHub).
 
 ## ④ Premier lancement
 
@@ -63,16 +73,13 @@ toute adresse listée dans `admins` est créée automatiquement comme président
 2. **Administration → Paramètres** : coordonnées du club, IBAN, RNA, SIRET, affiliation, président,
    trésorier, logo. Vérifiez « Début de la saison » = **Septembre**.
 3. **Adhérents → Tarifs** : vérifiez les tarifs de la saison.
-4. **Association → Reprise et import** :
-   - onglet *Excel d'origine* : déposez le classeur `.xlsm` → contrôlez que les soldes affichés (banque et
-     pointé) sont ceux de l'Excel au moment de l'import, puis importez. Le pointage et les écritures
-     manquantes se terminent ensuite dans le logiciel, relevé par relevé (page **Banque → Pointage**, méthode dans
-     [POINTAGE.md](POINTAGE.md)). Si vous
-     préférez finir dans l'Excel, réimportez-le : seules les nouvelles lignes sont ajoutées et les
-     pointages faits entre-temps sont reportés ;
-   - onglet *Version Google Sheets* : seulement si des données ont été saisies dans la version Apps Script
-     (Fichier → Télécharger → .xlsx depuis ce Google Sheets).
-5. **Administration → Utilisateurs** : ajoutez le trésorier, la secrétaire… avec leur rôle.
+4. **Association → Reprise et import → Modèle d'import Excel** : déposez le fichier de reprise
+   `SKD_reprise_2023-2026.xlsx` (déjà rapproché avec tous les relevés). L'aperçu doit afficher
+   **banque 213,46 €, pointé 213,46 €, caisse 0,00 €**. Importez. N'importez pas en plus le `.xlsm` d'origine :
+   ses écritures sont déjà dans le fichier de reprise.
+5. **Banque → Pointage** : validez les relevés un par un, du 02/05/2023 au 31/10/2026 (écart 0,00 € à
+   chaque fois ; joignez le PDF du relevé pour l'archiver dans le Drive). Méthode : [POINTAGE.md](POINTAGE.md).
+6. **Administration → Utilisateurs** : ajoutez le trésorier, la secrétaire… avec leur rôle.
 
 ## Adresse personnalisée (facultatif)
 
