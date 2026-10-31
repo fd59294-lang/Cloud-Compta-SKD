@@ -236,3 +236,31 @@ def test_tous_les_fichiers_se_chargent():
     for m in ["commun", "stockage", "installation", "ecran_adherents", "ecran_banque", "ecran_budget", "ecran_compta",
               "ecran_documents", "ecran_dons", "ecran_rapports", "ecran_reprise"]:
         importlib.import_module(m)
+
+
+def test_import_export_ffk():
+    """Format réel de l'extranet : texte tabulé latin-1, valeurs ="…" (données fictives)."""
+    import itertools
+    texte = ("Code\tNom\tPrénom\tSexe\tVille\tEtat\tNaissance\tVal.Début\tVal.Fin\tCatégorie\tStyle\tProduit\r\n"
+             '="1000001A"\t="MARTIN"\t="LEO"\t="M"\t="59000 LILLE"\t="Valide"\t01/02/2016\t'
+             '05/09/2025 10:00:00\t31/08/2026\t="PUPILLE"\t="SHOTOKAN"\t="LIC"\r\n'
+             '="1000002B"\t="DURAND"\t="ANNE"\t="F"\t="59000 LILLE"\t="Valide"\t03/04/1980\t'
+             '05/09/2025 10:00:00\t31/08/2026\t="SENIOR"\t="SHOTOKAN"\t="LIC"\r\n')
+    autre = texte.replace("31/08/2026", "31/08/2025").replace("05/09/2025", "05/09/2024")
+    ffk = pd.concat([A.lire_export_ffk(texte.encode("latin-1")), A.lire_export_ffk(autre.encode("latin-1"))])
+    tar = pd.DataFrame([{"saison": "2024", "nom": "Enfant", "age_min": 0, "age_max": 12, "cotisation": 129,
+                         "dont_licence": 39},
+                        {"saison": "2024", "nom": "Adulte", "age_min": 13, "age_max": 120, "cotisation": 139,
+                         "dont_licence": 39}])
+    n = itertools.count()
+    res = A.preparer_import_ffk(ffk, pd.DataFrame(), pd.DataFrame(), tar, 9, "t", "now", lambda: f"i{next(n)}")
+    assert len(res["adherents"]) == 2 and len(res["inscriptions"]) == 4      # 2 fiches, 2 saisons chacune
+    assert {i["saison"] for i in res["inscriptions"]} == {"2024", "2025"}
+    leo = next(a for a in res["adherents"] if a["nom"] == "MARTIN")
+    assert leo["premiere_saison"] == "2024" and leo["prenom"] == "Leo"
+    assert {(i["saison"], i["cotisation"]) for i in res["inscriptions"] if i["adherent_id"] == leo["id"]} == \
+        {("2024", 129.0), ("2025", 129.0)}
+    # Réimport : rien de nouveau
+    again = A.preparer_import_ffk(ffk, pd.DataFrame(res["adherents"]), pd.DataFrame(res["inscriptions"]), tar, 9,
+                                  "t", "now", lambda: f"j{next(n)}")
+    assert not again["adherents"] and not again["inscriptions"]

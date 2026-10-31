@@ -27,7 +27,9 @@ def page_reprise():
     if lecture_seule():
         return
     onglets = st.tabs(["📗 Excel d'origine (.xlsm)", "🟩 Version Google Sheets", "🥋 Liste d'adhérents",
-                       "📥 Modèle d'import"])
+                       "📥 Modèle d'import", "🏅 Licenciés FFK (par saison)"])
+    with onglets[4]:
+        _licencies_ffk()
     with onglets[0]:
         _excel_origine()
     with onglets[1]:
@@ -330,3 +332,57 @@ def _liste_adherents():
         journaliser("import", f"{len(nouveaux)} adhérents depuis {fichier.name}")
         rafraichir()
         st.success(f"{len(nouveaux)} adhérent(s) importé(s). Inscrivez-les pour la saison dans « Adhérents ».")
+
+
+# ------------------------------------------------------------------ 5. exports « licenciés » de l'extranet FFK
+def _licencies_ffk():
+    st.markdown(
+        "Déposez un ou plusieurs exports **« Liste des licenciés »** de l'extranet FFKaraté (fichiers "
+        "`LstExp_lstlic_….xls`, un par saison). Pour chaque licencié : **une seule fiche** (repérée par son "
+        "n° de licence) et **une inscription par saison** (saison = fin de validité de la licence), au tarif "
+        "de son âge. **Aucune écriture comptable n'est créée** : les cotisations sont déjà en comptabilité. "
+        "Les paiements se rattachent ensuite dans *Adhérents → Paiements* (case « écriture en comptabilité » "
+        "décochée).")
+    fichiers = st.file_uploader("Exports FFK", type=["xls", "xlsx", "csv", "txt"], accept_multiple_files=True,
+                                key="ffk")
+    if not fichiers:
+        return
+    morceaux = []
+    for f in fichiers:
+        try:
+            morceaux.append(A.lire_export_ffk(f.getvalue()))
+        except Exception as e:  # noqa: BLE001
+            st.error(f"{f.name} illisible : {e}")
+            return
+    ffk = pd.concat(morceaux, ignore_index=True)
+    try:
+        res = A.preparer_import_ffk(ffk, charger("adherents"), charger("inscriptions"), charger("tarifs"),
+                                    mois_debut(), utilisateur(), metier.maintenant(), metier.nouvel_id)
+    except ValueError as e:
+        st.error(str(e))
+        return
+    rap = res["rapport"]
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Licences lues", len(rap))
+    c2.metric("Nouveaux adhérents", len(res["adherents"]))
+    c3.metric("Inscriptions à créer", len(res["inscriptions"]))
+    if not rap.empty:
+        rap = rap.assign(saison=rap["saison"].map(lambda x: metier.libelle_exercice(int(x), mois_debut())
+                                                  if str(x).strip() not in ("", "nan") else ""))
+    st.dataframe(rap, hide_index=True, width="stretch",
+                 column_config={"licence": "Licence", "nom": "Nom", "saison": "Saison", "age": "Âge (début saison)",
+                                "tarif": "Tarif", "cotisation": st.column_config.NumberColumn("Cotisation",
+                                                                                              format="%.2f €"),
+                                "action": "Action"})
+    st.caption("Les cotisations sont celles des tarifs de la saison (Adhérents → Tarifs). Vérifiez les tarifs des "
+               "saisons passées avant d'importer ; réduction famille et frais d'adhésion se corrigent ensuite "
+               "sur chaque inscription.")
+    if (res["adherents"] or res["inscriptions"]) and st.button(
+            f"Importer {len(res['adherents'])} adhérent(s) et {len(res['inscriptions'])} inscription(s)",
+            type="primary", key="imp_ffk"):
+        backend().ajouter("adherents", res["adherents"])
+        backend().ajouter("inscriptions", res["inscriptions"])
+        journaliser("import", f"FFK : {len(res['adherents'])} adhérents, {len(res['inscriptions'])} inscriptions")
+        rafraichir()
+        flash("Import FFK terminé.")
+        st.rerun()

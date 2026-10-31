@@ -158,3 +158,109 @@ def adherents_actifs(adherents: pd.DataFrame) -> pd.DataFrame:
     if adherents.empty:
         return adherents
     return adherents[adherents["actif"].map(lambda v: str(v).strip() == "" or oui(v))]
+
+
+# ------------------------------------------------------------------ import de l'export « licenciés » de l'extranet FFK
+def lire_export_ffk(contenu: bytes) -> pd.DataFrame:
+    """Export « LstExp_lstlic… .xls » de l'extranet FFKaraté : en réalité un texte tabulé (latin-1) dont les
+    valeurs sont écrites ="…". Accepte aussi un vrai classeur Excel ou un CSV avec les mêmes colonnes."""
+    import io
+    df = None
+    if contenu[:4] in (b"PK\x03\x04", b"\xd0\xcf\x11\xe0"):            # vrai .xlsx / .xls
+        df = pd.read_excel(io.BytesIO(contenu), dtype=str)
+    else:
+        for enc in ("utf-8-sig", "cp1252", "latin-1"):
+            try:
+                texte = contenu.decode(enc)
+                break
+            except UnicodeDecodeError:
+                continue
+        sep = "\t" if texte.count("\t") >= texte.count(";") else ";"
+        df = pd.read_csv(io.StringIO(texte), sep=sep, dtype=str)
+    df = df.fillna("").apply(lambda c: c.astype(str).str.strip().str.replace(r'^="(.*)"$', r"\1", regex=True))
+    df.columns = [sans_accent(c).strip().lower().replace(".", "_").replace(" ", "_") for c in df.columns]
+    return df
+
+
+def _col(df: pd.DataFrame, *noms) -> str | None:
+    for n in noms:
+        if n in df.columns:
+            return n
+    return None
+
+
+def preparer_import_ffk(ffk: pd.DataFrame, adherents: pd.DataFrame, inscriptions: pd.DataFrame,
+                        tarifs: pd.DataFrame, mois_debut: int, utilisateur: str, maintenant: str,
+                        nouvel_id) -> dict:
+    """Fiches adhérents (une par licence) et inscriptions (une par saison) à partir d'exports FFK.
+
+    Saison = celle de la fin de validité de la licence (31/08/2026 → saison 2025-2026).
+    Aucun paiement ni aucune écriture comptable n'est créé : les cotisations sont déjà en comptabilité."""
+    from metier import bornes_exercice, exercice_de
+    c_lic, c_nom, c_pre = _col(ffk, "code", "licence", "n_licence"), _col(ffk, "nom"), _col(ffk, "prenom")
+    c_nai, c_vil = _col(ffk, "naissance", "date_de_naissance"), _col(ffk, "ville", "adresse")
+    c_fin, c_deb = _col(ffk, "val_fin", "fin_validite"), _col(ffk, "val_debut", "debut_validite")
+    c_etat, c_prod, c_cat = _col(ffk, "etat"), _col(ffk, "produit"), _col(ffk, "categorie")
+    if not (c_lic and c_nom):
+        raise ValueError("Colonnes « Code » (n° de licence) et « Nom » introuvables : ce n'est pas un export "
+                         "des licenciés FFK. Colonnes lues : " + ", ".join(ffk.columns))
+    adh = adherents.copy() if not adherents.empty else pd.DataFrame(columns=TABLES["adherents"])
+    ins = inscriptions.copy() if not inscriptions.empty else pd.DataFrame(columns=TABLES["inscriptions"])
+    par_licence = {normaliser_licence(r["licence"]): r["id"] for r in adh.to_dict("records") if r.get("licence")}
+    deja = {(r["adherent_id"], int(float(r["saison"] or 0))) for r in ins.to_dict("records")}
+    nouveaux, nouvelles, rapport = [], [], []
+    for r in ffk.to_dict("records"):
+        lic = normaliser_licence(r.get(c_lic))
+        if not lic:
+            continue
+        if c_etat and r.get(c_etat) and sans_accent(r[c_etat]).lower() not in ("valide", "validee"):
+            rapport.append({"licence": lic, "nom": r.get(c_nom, ""), "saison": "", "action": f"Ignoré ({r[c_etat]})"})
+            continue
+        fin = lire_date(str(r.get(c_fin, "")).split(" ")[0]) if c_fin else None
+        deb = lire_date(str(r.get(c_deb, "")).split(" ")[0]) if c_deb else None
+        if fin:
+            saison = exercice_de(fin, mois_debut)          # fin de validité 31/08/2026 → saison 2025-2026
+        elif deb:
+            saison = exercice_de(deb, mois_debut)
+        else:
+            rapport.append({"licence": lic, "nom": r.get(c_nom, ""), "saison": "", "action": "Ignoré (pas de dates)"})
+            continue
+        naissance = lire_date(r.get(c_nai, "")) if c_nai else None
+        nom, prenom = str(r.get(c_nom, "")).upper().strip(), str(r.get(c_pre, "")).strip().title()
+        aid = par_licence.get(lic)
+        action = []
+        if not aid:
+            aid = nouvel_id()
+            par_licence[lic] = aid
+            nouveaux.append({"id": aid, "licence": lic, "nom": nom, "prenom": prenom,
+                             "date_naissance": naissance.isoformat() if naissance else "", "responsable_legal": "",
+                             "famille": nom, "email": "", "telephone": "", "adresse": str(r.get(c_vil, "")).strip(),
+                             "premiere_saison": str(saison), "notes": "Repris de l'export des licenciés FFK",
+                             "actif": "oui", "cree_le": maintenant})
+            action.append("nouvel adhérent")
+        else:
+            for n in nouveaux:          # 1re saison = la plus ancienne vue dans les exports
+                if n["id"] == aid and int(n["premiere_saison"]) > saison:
+                    n["premiere_saison"] = str(saison)
+        if (aid, saison) in deja:
+            action.append("déjà inscrit cette saison")
+        else:
+            deja.add((aid, saison))
+            debut = bornes_exercice(saison, mois_debut)[0]
+            t = tarifs_saison(tarifs, saison)
+            nom_tarif = tarif_suggere(tarifs, saison, naissance, debut) if not t.empty else None
+            ligne_t = t[t["nom"] == nom_tarif] if nom_tarif else t.iloc[0:0]
+            cot = float(ligne_t.iloc[0]["cotisation"]) if not ligne_t.empty else 0.0
+            nouvelles.append({"id": nouvel_id(), "adherent_id": aid, "saison": str(saison),
+                              "tarif": nom_tarif or "À préciser", "cotisation": cot, "frais_adhesion": 0.0,
+                              "reduction": 0.0, "total_du": cot,
+                              "date_inscription": (deb or debut).isoformat(),
+                              "notes": "Licence FFK " + " ".join(x for x in (r.get(c_prod, ""), r.get(c_cat, "")) if x),
+                              "cree_par": utilisateur})
+            action.append("inscription créée")
+        age = age_au(naissance, bornes_exercice(saison, mois_debut)[0]) if naissance else None
+        rapport.append({"licence": lic, "nom": f"{nom} {prenom}", "saison": saison, "age": age,
+                        "tarif": nouvelles[-1]["tarif"] if "inscription créée" in action else "",
+                        "cotisation": nouvelles[-1]["cotisation"] if "inscription créée" in action else None,
+                        "action": ", ".join(action)})
+    return {"adherents": nouveaux, "inscriptions": nouvelles, "rapport": pd.DataFrame(rapport)}
