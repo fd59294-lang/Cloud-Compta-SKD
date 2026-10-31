@@ -340,3 +340,14 @@ def test_reprise_deux_paiements_identiques_meme_jour():
     res = A.preparer_reprise_adherents(buf.getvalue(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), ops, 9, "t",
                                        "now", lambda: f"i{next(n)}")
     assert [p["operation_id"] for p in res["paiements"]] == [ops["id"][1], ops["id"][2]]
+
+
+def test_client_drive_envoi_reprenable():
+    """Le code 308 des envois reprenables ne doit pas être pris pour une redirection (erreur « missing Location »)."""
+    import stockage
+    from google.oauth2.credentials import Credentials
+    b = stockage.BackendGoogle.__new__(stockage.BackendGoogle)
+    b.creds = Credentials(token="x", refresh_token="y", token_uri="https://oauth2.googleapis.com/token",
+                          client_id="i", client_secret="s")
+    d1, d2 = b.drive, b.drive
+    assert 308 not in d1._http.http.redirect_codes and d1._http is not d2._http

@@ -176,9 +176,11 @@ class BackendGoogle(Backend):
         """Client Drive neuf à chaque appel : la connexion HTTP (httplib2) ne se partage pas entre les sessions
         de l'application et se coupe après un temps d'inactivité (erreur SSL à l'envoi d'un fichier)."""
         from googleapiclient.discovery import build
+        from googleapiclient.http import build_http
         import google_auth_httplib2
-        import httplib2
-        http = google_auth_httplib2.AuthorizedHttp(self.creds, http=httplib2.Http(timeout=120))
+        # build_http() : connexion préréglée par Google (le code 308 des envois reprenables n'est pas
+        # traité comme une redirection, sinon « Redirected but the response is missing a Location: header »)
+        http = google_auth_httplib2.AuthorizedHttp(self.creds, http=build_http())
         return build("drive", "v3", http=http, cache_discovery=False)
 
     def _onglet(self, table: str):
@@ -225,7 +227,9 @@ class BackendGoogle(Backend):
         from googleapiclient.http import MediaIoBaseUpload
         parent = self.dossiers.get(dossier)
         meta = {"name": nom, **({"parents": [parent]} if parent else {})}
-        media = MediaIoBaseUpload(io.BytesIO(contenu), mimetype=mime, resumable=True, chunksize=5 * 1024 * 1024)
+        # envoi en une fois jusqu'à 5 Mo (reçus, rapports, logo…), par morceaux au-delà
+        media = MediaIoBaseUpload(io.BytesIO(contenu), mimetype=mime, resumable=len(contenu) > 5 * 1024 * 1024,
+                                  chunksize=5 * 1024 * 1024)
         f = self.drive.files().create(body=meta, media_body=media, fields="id,webViewLink").execute(num_retries=4)
         return f.get("webViewLink", f["id"])
 
