@@ -50,11 +50,21 @@ def _apercu_et_import(ops: pd.DataFrame, fichier, cle: str, attente: pd.DataFram
     if ops.empty:
         st.warning("Aucune opération exploitable dans ce fichier.")
         return False
+    # Une ligne déjà reprise mais pointée depuis dans le fichier : on reporte seulement le pointage.
+    existantes = operations()
+    non_pointees = {metier.empreinte(r.date, r.montant, r.sens, r.libelle): r.id
+                    for r in existantes.itertuples() if pd.notna(r.date) and not r.rapproche_b}
+    a_pointer = [non_pointees[metier.empreinte(r["date"], r["montant"], r["sens"], r["libelle"])]
+                 for r in ops.to_dict("records")
+                 if r["statut"] == "Doublon" and r["rapproche"] == "oui"
+                 and metier.empreinte(r["date"], r["montant"], r["sens"], r["libelle"]) in non_pointees]
     compte = ops["statut"].value_counts()
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Prêtes", int(compte.get("OK", 0)))
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Nouvelles", int(compte.get("OK", 0)))
     c2.metric("À classer (catégorie inconnue)", int(compte.get("À classer", 0)))
-    c3.metric("Déjà présentes (doublons)", int(compte.get("Doublon", 0)))
+    c3.metric("Déjà présentes", int(compte.get("Doublon", 0)))
+    c4.metric("Pointages à reporter", len(a_pointer),
+              help="Lignes déjà reprises, pointées depuis dans le fichier : seul le pointage est mis à jour.")
     t = metier.typer_operations(ops.drop(columns=["statut"]))
     s = metier.soldes(t)
     st.info(f"Après import de ces lignes seules : solde banque **{eur(s['banque'])}**, solde pointé "
@@ -74,10 +84,17 @@ def _apercu_et_import(ops: pd.DataFrame, fichier, cle: str, attente: pd.DataFram
         attente = attente[garder]
     avec_attente = attente is not None and not attente.empty and st.checkbox(
         f"Importer aussi les {len(attente)} opération(s) en attente", value=True, key=f"attente_{cle}")
-    if not st.button(f"Importer {len(a_importer)} opération(s)", type="primary", disabled=a_importer.empty,
+    libelle_bouton = f"Importer {len(a_importer)} opération(s)" + (
+        f" et reporter {len(a_pointer)} pointage(s)" if a_pointer else "")
+    if not st.button(libelle_bouton, type="primary", disabled=a_importer.empty and not a_pointer,
                      key=f"importer_{cle}"):
         return False
-    backend().ajouter("operations", a_importer.drop(columns=["statut"]).to_dict("records"))
+    if a_pointer:
+        brut = charger("operations").copy()
+        brut.loc[brut["id"].isin(a_pointer), "rapproche"] = "oui"
+        backend().remplacer("operations", brut)
+    if not a_importer.empty:
+        backend().ajouter("operations", a_importer.drop(columns=["statut"]).to_dict("records"))
     if avec_attente:
         backend().ajouter("attente", [{
             "id": metier.nouvel_id(), "date": r["date"].isoformat(), "sens": "Recette" if r["montant"] > 0 else "Dépense",
@@ -88,9 +105,10 @@ def _apercu_et_import(ops: pd.DataFrame, fichier, cle: str, attente: pd.DataFram
             "cree_par": utilisateur(), "cree_le": metier.maintenant()} for r in attente.to_dict("records")])
     ranger_fichier("Imports", f"{datetime.now():%Y-%m-%d_%Hh%M}_{fichier.name}", fichier.getvalue(),
                    fichier.type or "application/octet-stream")
-    journaliser("import", f"{len(a_importer)} opérations depuis {fichier.name}")
+    journaliser("import", f"{len(a_importer)} opérations, {len(a_pointer)} pointages depuis {fichier.name}")
     rafraichir()
-    flash(f"{len(a_importer)} opération(s) importée(s). Les lignes « à classer » sont à reprendre dans « Opérations ».")
+    flash(f"{len(a_importer)} opération(s) importée(s), {len(a_pointer)} pointage(s) reporté(s). "
+          "Les lignes « à classer » sont à reprendre dans « Opérations ».")
     st.rerun()
     return True
 

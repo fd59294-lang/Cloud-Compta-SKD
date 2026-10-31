@@ -5,7 +5,7 @@ Même procédure que pour le Comité des Fêtes. Durée : environ 30 minutes, un
 ```
 ① Google Cloud        ② Installation Drive        ③ Hébergement          ④ Premier lancement
 identifiants OAuth ──► script installer_google ──► depuis GitHub + ──► reprise de l'Excel
-(projet du Comité)     (crée Sheets + dossiers)    secrets              et vérification 251,84 €
+(projet du Comité)     (crée Sheets + dossiers)    secrets              (le solde doit égaler l'Excel)
 ```
 
 ## ① Identifiants Google (projet Google Cloud du Comité)
@@ -64,8 +64,11 @@ toute adresse listée dans `admins` est créée automatiquement comme président
    trésorier, logo. Vérifiez « Début de la saison » = **Septembre**.
 3. **Adhérents → Tarifs** : vérifiez les tarifs de la saison.
 4. **Association → Reprise et import** :
-   - onglet *Excel d'origine* : déposez le classeur `.xlsm` → contrôlez que le solde banque affiché est
-     **251,84 €** et le solde pointé **361,81 €**, puis importez ;
+   - onglet *Excel d'origine* : déposez le classeur `.xlsm` → contrôlez que les soldes affichés (banque et
+     pointé) sont ceux de l'Excel au moment de l'import, puis importez. Le pointage et les écritures
+     manquantes se terminent ensuite dans le logiciel (page **Banque → Contrôle du relevé**). Si vous
+     préférez finir dans l'Excel, réimportez-le : seules les nouvelles lignes sont ajoutées et les
+     pointages faits entre-temps sont reportés ;
    - onglet *Version Google Sheets* : seulement si des données ont été saisies dans la version Apps Script
      (Fichier → Télécharger → .xlsx depuis ce Google Sheets).
 5. **Administration → Utilisateurs** : ajoutez le trésorier, la secrétaire… avec leur rôle.
