@@ -282,3 +282,133 @@ def benevoles_connus(adherents: pd.DataFrame, inscriptions: pd.DataFrame) -> set
         return set()
     ids = set(inscriptions.loc[inscriptions["tarif"] == TARIF_BENEVOLE, "adherent_id"])
     return {normaliser_licence(l) for l in adherents.loc[adherents["id"].isin(ids), "licence"]}
+
+
+# ------------------------------------------------------------------ reprise complète : adhérents + inscriptions + paiements
+FEUILLES_REPRISE = {
+    "Adhérents": ["Licence", "Nom", "Prénom", "Date de naissance", "Responsable légal", "Famille", "Adresse",
+                  "E-mail", "Téléphone", "Notes"],
+    "Inscriptions": ["Licence", "Saison", "Tarif", "Cotisation", "Frais d'adhésion", "Réduction", "Notes"],
+    "Paiements": ["Licence", "Saison", "Date", "Montant", "Mode", "Payé par", "Écriture du", "Montant de l'écriture"],
+}
+
+
+def _saison_de(texte, mois_debut: int) -> int | None:
+    """« 2025-2026 », « 2025 » ou une date → saison (année de début)."""
+    from metier import exercice_de
+    t = str(texte or "").strip()
+    if len(t) >= 4 and t[:4].isdigit() and (len(t) == 4 or t[4] in "-/ "):
+        return int(t[:4])
+    d = lire_date(t)
+    return exercice_de(d, mois_debut) if d else None
+
+
+def preparer_reprise_adherents(contenu: bytes, adherents: pd.DataFrame, inscriptions: pd.DataFrame,
+                               paiements: pd.DataFrame, operations: pd.DataFrame, mois_debut: int, utilisateur: str,
+                               maintenant: str, nouvel_id) -> dict:
+    """Classeur « Adhérents / Inscriptions / Paiements » → lignes à ajouter, sans aucune écriture comptable.
+
+    Chaque paiement est rattaché à l'écriture de recette déjà en comptabilité (même date et même montant que
+    « Écriture du » / « Montant de l'écriture », ex. la remise de chèques qui le contient). Déjà présents
+    (licence, inscription de la saison, paiement identique) : ignorés, donc réimport sans doublon."""
+    import io
+    from metier import nombre
+    feuilles = pd.read_excel(io.BytesIO(contenu), sheet_name=None, dtype=object)
+    norm = {sans_accent(k).strip().lower(): v for k, v in feuilles.items()}
+
+    def feuille(nom):
+        df = norm.get(sans_accent(nom).lower())
+        if df is None:
+            return pd.DataFrame(columns=FEUILLES_REPRISE[nom])
+        df = df.rename(columns={c: str(c).strip() for c in df.columns}).dropna(how="all")
+        return df.where(pd.notna(df), "")
+
+    adh = adherents.copy() if not adherents.empty else pd.DataFrame(columns=TABLES["adherents"])
+    ins = inscriptions.copy() if not inscriptions.empty else pd.DataFrame(columns=TABLES["inscriptions"])
+    pai = paiements.copy() if not paiements.empty else pd.DataFrame(columns=TABLES["paiements"])
+    ops = operations.copy()
+    par_lic = {normaliser_licence(r["licence"]): r["id"] for r in adh.to_dict("records") if r.get("licence")}
+    insc = {(r["adherent_id"], int(float(r["saison"] or 0))): r["id"] for r in ins.to_dict("records")}
+    deja_pai = {(r["inscription_id"], str(lire_date(r["date"])), round(float(nombres(pd.Series([r["montant"]]))[0]
+                                                                              or 0), 2))
+                for r in pai.to_dict("records")}
+    nv_adh, nv_ins, nv_pai, erreurs = [], [], [], []
+
+    for k, r in enumerate(feuille("Adhérents").to_dict("records"), start=2):
+        lic = normaliser_licence(r.get("Licence"))
+        if not lic or not str(r.get("Nom", "")).strip():
+            erreurs.append(f"Adhérents, ligne {k} : licence ou nom manquant.")
+            continue
+        if lic in par_lic:
+            continue
+        aid = nouvel_id()
+        par_lic[lic] = aid
+        nai = lire_date(r.get("Date de naissance"))
+        nom = str(r["Nom"]).strip().upper()
+        nv_adh.append({"id": aid, "licence": lic, "nom": nom, "prenom": str(r.get("Prénom", "")).strip(),
+                       "date_naissance": nai.isoformat() if nai else "",
+                       "responsable_legal": str(r.get("Responsable légal", "")).strip(),
+                       "famille": str(r.get("Famille", "")).strip().upper() or nom,
+                       "email": str(r.get("E-mail", "")).strip(), "telephone": str(r.get("Téléphone", "")).strip(),
+                       "adresse": str(r.get("Adresse", "")).strip(), "premiere_saison": "",
+                       "notes": str(r.get("Notes", "")).strip(), "actif": "oui", "cree_le": maintenant})
+
+    for k, r in enumerate(feuille("Inscriptions").to_dict("records"), start=2):
+        lic, saison = normaliser_licence(r.get("Licence")), _saison_de(r.get("Saison"), mois_debut)
+        aid = par_lic.get(lic)
+        if not aid or saison is None:
+            erreurs.append(f"Inscriptions, ligne {k} : licence inconnue ou saison illisible ({lic} {r.get('Saison')}).")
+            continue
+        if (aid, saison) in insc:
+            continue
+        cot, frais = nombre(r.get("Cotisation"), 0.0), nombre(r.get("Frais d'adhésion"), 0.0)
+        red = nombre(r.get("Réduction"), 0.0)
+        iid = nouvel_id()
+        insc[(aid, saison)] = iid
+        nv_ins.append({"id": iid, "adherent_id": aid, "saison": str(saison), "tarif": str(r.get("Tarif", "")).strip(),
+                       "cotisation": cot, "frais_adhesion": frais, "reduction": red,
+                       "total_du": round(max(cot + frais - red, 0.0), 2), "date_inscription": f"{saison}-{mois_debut:02d}-01",
+                       "notes": str(r.get("Notes", "")).strip(), "cree_par": utilisateur})
+        for a in nv_adh:
+            if a["id"] == aid and (not a["premiere_saison"] or int(a["premiere_saison"]) > saison):
+                a["premiere_saison"] = str(saison)
+
+    if not ops.empty:
+        ops = ops.assign(_d=ops["date"].map(lambda x: str(lire_date(x))),
+                         _m=nombres(ops["montant"]).fillna(0).round(2))
+    for k, r in enumerate(feuille("Paiements").to_dict("records"), start=2):
+        lic, saison = normaliser_licence(r.get("Licence")), _saison_de(r.get("Saison"), mois_debut)
+        aid = par_lic.get(lic)
+        iid = insc.get((aid, saison)) if aid and saison is not None else None
+        jour, montant = lire_date(r.get("Date")), nombre(r.get("Montant"), 0.0)
+        if not iid or not jour or montant <= 0:
+            erreurs.append(f"Paiements, ligne {k} : inscription introuvable, date ou montant illisible ({lic}).")
+            continue
+        if (iid, str(jour), round(montant, 2)) in deja_pai:
+            continue
+        op_id = ""
+        d_op, m_op = lire_date(r.get("Écriture du")), nombre(r.get("Montant de l'écriture"), 0.0)
+        if d_op and m_op:
+            x = ops[(ops["_d"] == str(d_op)) & (ops["_m"] == round(m_op, 2)) & (ops["sens"] == "Recette")] \
+                if not ops.empty else ops
+            if len(x) == 1:
+                op_id = x.iloc[0]["id"]
+            else:
+                erreurs.append(f"Paiements, ligne {k} : écriture du {d_op:%d/%m/%Y} de {m_op:.2f} € "
+                               f"{'introuvable' if x.empty else 'en plusieurs exemplaires'} en comptabilité "
+                               "(paiement repris sans lien).")
+        deja_pai.add((iid, str(jour), round(montant, 2)))
+        nv_pai.append({"id": nouvel_id(), "inscription_id": iid, "adherent_id": aid, "saison": str(saison),
+                       "date": jour.isoformat(), "montant": round(montant, 2), "mode": str(r.get("Mode", "")).strip(),
+                       "payeur": str(r.get("Payé par", "")).strip(), "operation_id": op_id, "recu": "",
+                       "saisi_par": f"reprise ({utilisateur})", "saisi_le": maintenant})
+    return {"adherents": nv_adh, "inscriptions": nv_ins, "paiements": nv_pai, "erreurs": erreurs}
+
+
+def modele_reprise_adherents() -> bytes:
+    import io
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as w:
+        for nom, cols in FEUILLES_REPRISE.items():
+            pd.DataFrame(columns=cols).to_excel(w, sheet_name=nom, index=False)
+    return buf.getvalue()

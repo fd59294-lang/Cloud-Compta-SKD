@@ -280,3 +280,37 @@ def test_import_ffk_benevoles():
     assert A.benevoles_connus(pd.DataFrame(res["adherents"]), pd.DataFrame(res["inscriptions"])) == {"1000002B"}
     sans = A.preparer_import_ffk(ffk, pd.DataFrame(), pd.DataFrame(), tar, 9, "t", "now", lambda: f"j{next(n)}")
     assert sans["inscriptions"][0]["tarif"].startswith("Ado")        # jamais proposé d'après l'âge
+
+
+def test_reprise_adherents_complete():
+    """Paiements rattachés aux écritures existantes (remise de chèques groupée), aucun doublon au réimport."""
+    import io
+    import itertools
+    from datetime import date
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as w:
+        pd.DataFrame([["1000001A", "MARTIN", "Léo", "01/02/2016", "MARTIN Paul", "", "", "", "", ""],
+                      ["1000002B", "DURAND", "Anne", "03/04/1980", "", "", "", "", "", ""]],
+                     columns=A.FEUILLES_REPRISE["Adhérents"]).to_excel(w, sheet_name="Adhérents", index=False)
+        pd.DataFrame([["1000001A", "2025-2026", "Enfant", 129, 0, 0, ""],
+                      ["1000002B", "2025-2026", "Bénévole", 0, 0, 0, ""]],
+                     columns=A.FEUILLES_REPRISE["Inscriptions"]).to_excel(w, sheet_name="Inscriptions", index=False)
+        pd.DataFrame([["1000001A", "2025-2026", "12/09/2025", 100, "Chèque", "MARTIN Paul", "12/09/2025", 223],
+                      ["1000001A", "2025-2026", "28/10/2025", 29, "Chèque", "MARTIN Paul", "28/10/2025", 94]],
+                     columns=A.FEUILLES_REPRISE["Paiements"]).to_excel(w, sheet_name="Paiements", index=False)
+    ops = pd.DataFrame([metier.nouvelle_operation(date(2025, 9, 12), "Recette", "756", "Remise", 223, "Banque", "", "",
+                                                  "", "", "t"),
+                        metier.nouvelle_operation(date(2025, 10, 28), "Recette", "756", "Remise", 94, "Banque", "", "",
+                                                  "", "", "t")])
+    n = itertools.count()
+    res = A.preparer_reprise_adherents(buf.getvalue(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), ops, 9, "t",
+                                       "now", lambda: f"i{next(n)}")
+    assert not res["erreurs"] and len(res["paiements"]) == 2
+    assert [p["operation_id"] for p in res["paiements"]] == list(ops["id"])
+    etat = A.etat_saison(pd.DataFrame(res["adherents"]), pd.DataFrame(res["inscriptions"]),
+                         pd.DataFrame(res["paiements"]), 2025)
+    assert set(etat["statut"]) == {"À jour"}
+    again = A.preparer_reprise_adherents(buf.getvalue(), pd.DataFrame(res["adherents"]),
+                                         pd.DataFrame(res["inscriptions"]), pd.DataFrame(res["paiements"]), ops, 9,
+                                         "t", "now", lambda: f"j{next(n)}")
+    assert not (again["adherents"] or again["inscriptions"] or again["paiements"])

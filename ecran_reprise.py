@@ -27,9 +27,11 @@ def page_reprise():
     if lecture_seule():
         return
     onglets = st.tabs(["📗 Excel d'origine (.xlsm)", "🟩 Version Google Sheets", "🥋 Liste d'adhérents",
-                       "📥 Modèle d'import", "🏅 Licenciés FFK (par saison)"])
+                       "📥 Modèle d'import", "🏅 Licenciés FFK (par saison)", "👥 Reprise adhérents complète"])
     with onglets[4]:
         _licencies_ffk()
+    with onglets[5]:
+        _reprise_adherents()
     with onglets[0]:
         _excel_origine()
     with onglets[1]:
@@ -414,4 +416,55 @@ def _licencies_ffk():
         journaliser("import", f"FFK : {len(res['adherents'])} adhérents, {len(res['inscriptions'])} inscriptions")
         rafraichir()
         flash("Import FFK terminé.")
+        st.rerun()
+
+
+# ------------------------------------------------------------------ 6. reprise complète adhérents / inscriptions / paiements
+def _reprise_adherents():
+    st.markdown(
+        "Classeur à trois feuilles **Adhérents**, **Inscriptions**, **Paiements** (modèle ci-dessous). "
+        "Les paiements sont **rattachés aux écritures déjà en comptabilité** (colonnes « Écriture du » et "
+        "« Montant de l'écriture », ex. la remise de chèques qui contient le chèque) : **aucune écriture n'est "
+        "créée**. Ce qui existe déjà (licence, inscription de la saison, paiement identique) est ignoré.")
+    st.download_button("Télécharger le modèle", A.modele_reprise_adherents(), file_name="modele_reprise_adherents.xlsx")
+    fichier = st.file_uploader("Classeur de reprise (.xlsx)", type=["xlsx"], key="reprise_adh")
+    if not fichier:
+        return
+    try:
+        res = A.preparer_reprise_adherents(fichier.getvalue(), charger("adherents"), charger("inscriptions"),
+                                           charger("paiements"), charger("operations"), mois_debut(), utilisateur(),
+                                           metier.maintenant(), metier.nouvel_id)
+    except Exception as e:  # noqa: BLE001
+        st.error(f"Classeur illisible : {e}")
+        return
+    for e in res["erreurs"]:
+        st.warning(e)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Adhérents à créer", len(res["adherents"]))
+    c2.metric("Inscriptions à créer", len(res["inscriptions"]))
+    c3.metric("Paiements à reprendre", len(res["paiements"]))
+    c4.metric("Dont rattachés à la compta", sum(1 for p in res["paiements"] if p["operation_id"]))
+    if res["inscriptions"]:
+        adh = pd.concat([charger("adherents"), pd.DataFrame(res["adherents"])], ignore_index=True)
+        pai = pd.concat([charger("paiements"), pd.DataFrame(res["paiements"])], ignore_index=True)
+        ins = pd.concat([charger("inscriptions"), pd.DataFrame(res["inscriptions"])], ignore_index=True)
+        for saison in sorted({int(i["saison"]) for i in res["inscriptions"]}):
+            etat = A.etat_saison(adh.astype(str), ins.astype(str), pai.astype(str), saison)
+            st.markdown(f"**Saison {metier.libelle_exercice(saison, mois_debut())} après import**")
+            st.dataframe(etat[["licence", "nom", "tarif", "total_du", "paye", "reste", "statut"]], hide_index=True,
+                         width="stretch",
+                         column_config={"licence": "Licence", "nom": "Nom", "tarif": "Tarif", "statut": "Statut",
+                                        "total_du": st.column_config.NumberColumn("Dû", format="%.2f €"),
+                                        "paye": st.column_config.NumberColumn("Payé", format="%.2f €"),
+                                        "reste": st.column_config.NumberColumn("Reste", format="%.2f €")})
+    total = len(res["adherents"]) + len(res["inscriptions"]) + len(res["paiements"])
+    if total and st.button(f"Importer ({len(res['adherents'])} adhérents, {len(res['inscriptions'])} inscriptions, "
+                           f"{len(res['paiements'])} paiements)", type="primary", key="imp_reprise_adh"):
+        for table in ("adherents", "inscriptions", "paiements"):
+            if res[table]:
+                backend().ajouter(table, res[table])
+        journaliser("import", f"reprise adhérents : {len(res['adherents'])} / {len(res['inscriptions'])} / "
+                              f"{len(res['paiements'])}")
+        rafraichir()
+        flash("Reprise des adhérents terminée.")
         st.rerun()
