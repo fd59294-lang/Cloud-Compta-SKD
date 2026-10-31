@@ -34,6 +34,7 @@ CATEGORIES_DEFAUT = [
     ("623", "Communication, impression, site internet", "Dépense"),
     ("626", "Frais postaux et téléphone", "Dépense"),
     ("6257", "Réceptions, récompenses, cadeaux", "Dépense"),
+    ("6238", "Dons versés à d'autres organismes", "Dépense"),
     ("658", "Dépenses diverses", "Dépense"),
     ("D99", "À classer (dépense)", "Dépense"),
 ]
